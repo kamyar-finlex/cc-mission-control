@@ -1,0 +1,33 @@
+{
+  "name": "cc-mission-control",
+  "version": "0.1.0",
+  "description": "A live mission-control dashboard for all your local Claude Code sessions. Unofficial, not affiliated with Anthropic.",
+  "type": "module",
+  "bin": {
+    "cc-mission-control": "bin/cli.mjs"
+  },
+  "scripts": {
+    "start": "node bin/cli.mjs",
+    "check": "node --check server.mjs && node --check statusline.mjs && node --check bin/cli.mjs"
+  },
+  "files": [
+    "bin/",
+    "public/",
+    "server.mjs",
+    "statusline.mjs",
+    "README.md",
+    "LICENSE"
+  ],
+  "engines": {
+    "node": ">=18"
+  },
+  "keywords": [
+    "claude-code",
+    "claude",
+    "dashboard",
+    "agents",
+    "sessions",
+    "mission-control"
+  ],
+  "license": "MIT"
+}

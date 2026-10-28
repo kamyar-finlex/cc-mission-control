@@ -1,0 +1,165 @@
+# CC Mission Control
+
+**One live dashboard for every Claude Code session on your machine.**
+
+When you run several Claude Code sessions at once (in the Claude desktop app, in terminals, as background agents), it gets hard to keep track of them. Which ones are working? Which are waiting for you, and why? Which can be archived? CC Mission Control puts them all on one board at `http://localhost:7777`, updated live, with each session's story, open work, tickets and pull requests one click away.
+
+> **Unofficial.** CC Mission Control is a community project. It is not made by, endorsed by or affiliated with Anthropic. It reads files that Claude Code and the Claude desktop app keep on your machine; those formats are internal and can change with any update, so parts of the dashboard may stop working until it is updated.
+
+## Quick start
+
+```bash
+npx cc-mission-control
+```
+
+That starts the dashboard and opens it in your browser. Requires Node.js 18 or newer and Claude Code.
+
+To keep it running all the time (macOS) and enable the optional extras:
+
+```bash
+npm install -g cc-mission-control
+cc-mission-control setup
+```
+
+## What you get
+
+**The board**
+- Three live columns: **Working**, **Waiting for you** and **Ended**. They update about once a second.
+- Time filters: Today, Last two days, Last three days, This week, This month, All. Keys `1`–`6` pick them.
+- A **NEW** badge on sessions that replied since you last looked. The browser tab title shows how many there are.
+- Search across titles, folders, branches, tickets and messages. `/` focuses it.
+- Optional desktop notifications when a session finishes and is waiting for you.
+
+**On every card**
+- Status, project folder, branch or worktree, model and context size.
+- **Why it's still alive**: one coloured line, in the session's own voice, saying why it's waiting:
+  - *Waiting for your answer: "Open the PR?"*
+  - *Blocked: …*
+  - *Not shipped yet: …*
+  - *TICKET-123 is still In Progress. Don't archive me.*
+  - *Nothing open that I can see. Safe to archive.*
+- A **?** that opens the full picture:
+  - the session's open question, with its own suggested replies as one-click buttons
+  - everything still open (unfinished work, unanswered points, tickets not done, PRs needing review)
+  - general nudges such as "Carry on with what is open"
+- The latest **Linear ticket** with its status, and *+N ▾* for the others. Ticket facts are learned from Linear MCP replies already in your transcripts; the dashboard never calls Linear.
+- Open **pull requests** with review and check state (or the most recently merged one), and *+N ▾* for the rest. This uses read-only `gh` lookups.
+- The **Linear project** as a small tab under the card. Click it to filter the board to that project.
+- Sessions started from another session appear as a **tree** under their parent.
+
+**Session detail** (click a card)
+- The live transcript as a chat:
+  - your messages as bubbles, with any images you sent
+  - Claude's replies rendered as Markdown
+  - the tool calls between messages folded into one *N steps* row (with icons, results, and any screenshots kept visible)
+  - click any image to see it full size
+- Linear and PR panels, each collapsible.
+- `f` maximizes the panel and `d` collapses the details.
+
+**Deployments** (in the detail panel)
+- Which repositories the session is shipping, at which version, and how far each got: *Waiting at the production gate*, *On beta*, *Tagged, not on beta yet*, *Ready, not tagged yet* or *In production*. The ones not yet in production come first.
+- Read from the session's turn recaps, so a line like "web-app 1.8.25 is on beta" or "Production for api-server 2.4.0 still waits at the gate" becomes a row. A bare version such as "2.4.1" belongs to the repository last named with that major.minor. Hover a row to see the sentence it came from.
+- **🚀 Deploy** on a row that isn't in production asks *Are you sure?*, showing the version, its current stage and what will happen. Confirming sends that session's agent a request to deploy it. The request tells it to check the risks first, report them along with the exact steps it will take, and wait for your explicit "yes, deploy". The dashboard never deploys anything itself.
+
+**Actions** (right-click a card, or use ⋯ in the detail panel)
+- **Open in Claude app**: jumps straight to that exact session in the Claude desktop app.
+- **Attach in Terminal** or **Stop**, for background agents.
+- **Resume in Terminal** or **Continue in background**, for sessions that have ended.
+- **Archive** or **Unarchive**. Background agents are stopped and removed. Other sessions are hidden from the board (the Claude app has no outside way to archive). Sessions you archive in the app disappear on their own.
+- **Show story** (`s`): the whole session in one paragraph, with **Copy** and **Write with Claude**.
+- **Reply** (`r`, the ✎ button on a card, or the editor at the bottom of the detail panel): a Markdown editor with a toolbar, Write/Preview tabs, ⌘↩ to send, and drafts kept per session. **Paste, drop or 📎-attach images**: they're saved under `~/.claude/cc-mission-control/attachments/` and sent as file paths Claude can open (and attached to new Claude app sessions). How the reply is delivered:
+  - **Ended terminal sessions:** sent for real, continuing the session in the background.
+  - **Claude app sessions:** copied, and the exact session opens in the app, so you paste and press Enter. The app has no outside input.
+  - **Claude app sessions with *Send to agent: on*** (opt-in, macOS): the console opens the session, waits until the app reports that exact session focused with Claude in front, then pastes and presses Enter the way you would. It confirms success only when the reply shows up in the session's transcript (as a message, or queued if the session is busy). Otherwise it says so and leaves the reply on your clipboard. The Claude app doesn't let outside processes read its message box, so the console can't check the box before typing. Use it only while you're at the keyboard, and don't click elsewhere during the second it takes. It needs Accessibility permission for the `node` that runs the dashboard.
+  - **Running agents:** copied, then attached in Terminal.
+- **+ New session** (`n`): write a prompt in Markdown, pick a folder, and *Open in Claude app* opens a new app session with the prompt already typed in. You can also run it as a `claude --bg` background agent.
+
+**Project updates** (📝 in the header)
+- Pick Today, Yesterday or This week to see which Linear projects had work and which sessions belong to each. Sessions without a project are left out.
+- *Write updates in Claude app* opens a new Claude app session with `/project-updates` typed in. The bundled skill reads the dashboard's `GET /api/digest?range=today` and checks each session really belongs to its project. It writes one short, non-technical update per project with no code, links, names or secrets, and suggests a health. Then it **shows you all drafts and posts nothing until you say yes**. After your yes it posts them as Linear project updates.
+- Install the skill once: copy `skills/project-updates/` to `~/.claude/skills/`.
+
+**Usage toolbar**
+Your plan limits, like the Claude app's usage card: the current 5-hour session and the weekly limits per model, each with its reset time, plus a **Refresh** button.
+
+## Optional extras
+
+`cc-mission-control setup` offers three extras. All are optional; the board works without them.
+
+| Extra | What it unlocks | How |
+|---|---|---|
+| Always-on service (macOS) | The dashboard starts at login and restarts if it crashes | A LaunchAgent, `com.cc-mission-control` |
+| Status line | Plan limits from terminal sessions | Adds `statusLine` to `~/.claude/settings.json` (backup first; skipped if you already have one) |
+| Usage task (Claude app) | Plan limits every 30 minutes, without a terminal | Prints a message to paste into a Claude app session. It creates a scheduled task that calls the app's usage tool and saves the result. Each run uses a little of your plan. |
+
+Some features use tools you may already have:
+- **`gh`**, logged in: PR states.
+- **The Linear MCP** in your sessions: ticket titles and status.
+- **A logged-in `claude` CLI**: *Write with Claude* and *Check with Claude* (they run `claude -p` on Haiku with no tools, no settings and no saved session).
+
+## How it works
+
+Everything runs on your machine. The server is a single dependency-free Node file.
+
+| Reads | For |
+|---|---|
+| `~/.claude/sessions/*.json` | Which sessions are running, busy or idle (Claude Code's live registry) |
+| `~/.claude/projects/**/*.jsonl` | Transcripts: messages, tool calls, turn recaps, ticket and PR mentions |
+| `~/Library/Application Support/Claude/claude-code-sessions/**` | Claude desktop app sessions: their app id, archived flag and parent session (read-only, macOS) |
+
+It writes only to `~/.claude/cc-mission-control/`: the archive list, saved stories and open-item checks, and usage readings.
+
+It reaches outside your machine only when you have set that up:
+- `gh api graphql`, to read PR states
+- `claude -p`, when you click *Write with Claude* or *Check with Claude*
+
+## Security
+
+- The server listens on `127.0.0.1` only. It refuses requests with any other `Host` header, which blocks DNS rebinding.
+- Every action needs a per-run token that only the page it serves knows, so other websites can't trigger anything.
+- It can start agents and shows every transcript on your machine. **Never expose it on a network.**
+
+## Platform support
+
+- **macOS:** everything.
+- **Linux:** the board, transcripts, tickets, PRs, background agents and stories work. Claude desktop app features, Terminal attach and the always-on service don't.
+- **Windows:** untested.
+
+## Assumptions and where to change them
+
+CC Mission Control reads plain text from your sessions, so some of its behaviour rests on assumptions. If your team works differently, here's where to adjust each one.
+
+| Assumption | What it affects | Where to change it |
+|---|---|---|
+| **Tickets live in Linear.** Ticket ids look like `ABC-123`, and ticket facts come from Linear MCP replies already in your transcripts. | Ticket chips, project tabs, the project grouping in *Project updates* | `server.mjs`: `ISSUE_ID`, `LINEAR_TOOL`, `learn()`, `linearFor()` |
+| **Pull requests live on GitHub**, read with the `gh` CLI. | PR chips and states | `server.mjs`: `PR_URL`, `prTick()` |
+| **Releases go through beta (or staging), then a production gate.** The stages are recognised from English wording such as "on beta", "waits at the production gate" or "live in production". | The *Deployments* box | `server.mjs`: `deployStage()`, `DEPLOY_LABEL` |
+| **Unfinished work is spotted from English phrases** such as "blocked", "not yet", "still to do" or "waiting on". | The *why it's still alive* line and *Still open* lists | `server.mjs`: `OPEN_CUE`, `aliveReason()` |
+| **Deploys are done by the session's agent**, which is asked to report risks and wait for your yes. | The 🚀 *Deploy* request text | `public/index.html`: `deployPrompt` |
+| **Nudge replies are general English sentences.** | *Carry on with what is open* and *What is left, and who owns it?* | `public/index.html`: `GENERIC_REPLIES` |
+| **The Claude desktop app's internals:** its `claude://claude.ai/epitaxy/…` links, its session metadata under `~/Library/Application Support/Claude`, its scheduled tasks and its `get_usage` tool. None of these are a public API. | Opening sessions in the app, the session tree, archived flags, usage limits | `server.mjs`: `APP_DIR`, `scanAppMeta()`, `USAGE_TASK_ID` |
+| **Project updates are posted to Linear** with the Linear MCP `save_status_update` tool, in a short Progress / Next / Needs-attention shape. | The `project-updates` skill | `skills/project-updates/SKILL.md` |
+
+## Options
+
+| Environment variable | Default | Meaning |
+|---|---|---|
+| `PORT` | `7777` | Port to listen on (or `--port`) |
+| `CLAUDE_BIN` | `claude` | The Claude Code CLI to call |
+| `RECENT_HOURS` | start of this month or week | How far back ended sessions are shown |
+| `CCMC_DATA_DIR` | `~/.claude/cc-mission-control` | Where it saves its own data |
+
+## Uninstall
+
+```bash
+cc-mission-control uninstall
+npm uninstall -g cc-mission-control
+```
+
+## Contributing
+
+Issues and pull requests are welcome. The whole app is three files: `server.mjs` (data and actions), `public/index.html` (the page) and `statusline.mjs`. Please keep it dependency-free.
+
+## License
+
+MIT. See [LICENSE](LICENSE).
