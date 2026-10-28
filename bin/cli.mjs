@@ -1,7 +1,8 @@
 #!/usr/bin/env node
 // cc-mission-control: start the dashboard, or set up / remove its optional pieces.
 //   cc-mission-control                 start on http://localhost:7777 and open it
-//   cc-mission-control setup           always-on (macOS) + status line + usage-task instructions
+//   cc-mission-control setup           always-on (macOS) + status line + skill + usage-task instructions
+//                                      (--no-service skips the always-on service)
 //   cc-mission-control uninstall       remove the always-on service
 //   cc-mission-control usage-task      print the message that creates the usage task
 import fs from 'node:fs';
@@ -18,6 +19,8 @@ const LABEL = 'com.cc-mission-control';
 const PLIST = path.join(HOME, 'Library', 'LaunchAgents', `${LABEL}.plist`);
 const LOG = path.join(HOME, 'Library', 'Logs', 'cc-mission-control.log');
 const SETTINGS = path.join(HOME, '.claude', 'settings.json');
+const SKILL_SRC = path.join(ROOT, 'skills', 'project-updates');
+const SKILL_DEST = path.join(HOME, '.claude', 'skills', 'project-updates');
 const DATA_DIR = path.join(HOME, '.claude', 'cc-mission-control');
 
 const args = process.argv.slice(2);
@@ -102,6 +105,14 @@ function installStatusLine() {
   say('• Status line: added to ~/.claude/settings.json (backup next to it). Terminal Claude Code sessions now report plan limits.');
 }
 
+// The project-updates skill, so Claude can turn the day's sessions into project updates.
+function installSkill() {
+  if (fs.existsSync(path.join(SKILL_DEST, 'SKILL.md'))) { say('• Project-updates skill: already installed (left as is).'); return; }
+  fs.mkdirSync(SKILL_DEST, { recursive: true });
+  fs.copyFileSync(path.join(SKILL_SRC, 'SKILL.md'), path.join(SKILL_DEST, 'SKILL.md'));
+  say(`• Project-updates skill: installed to ${SKILL_DEST}. New Claude Code sessions can run /project-updates.`);
+}
+
 function usageTaskMessage() {
   const file = path.join(DATA_DIR, 'plan.json');
   return `Create a scheduled task with taskId "cc-mission-control-usage", title "CC Mission Control usage refresh", cron "*/30 * * * *", notifications off, and this prompt:
@@ -116,12 +127,18 @@ Keep the usage toolbar of the local CC Mission Control dashboard up to date. Do 
 
 function setup() {
   say('Setting up CC Mission Control\n');
-  installService();
+  if (flag('no-service')) say('• Always-on service: skipped (--no-service).'); else installService();
   installStatusLine();
+  installSkill();
   fs.mkdirSync(DATA_DIR, { recursive: true });
   say('\n• Usage toolbar (optional, Claude desktop app): the app keeps your usage card to itself, so a small scheduled task');
   say('  reads it every 30 minutes. Paste this into any Claude Code session in the Claude app:\n');
   say(usageTaskMessage().replace(/^/gm, '    '));
+  say('\nOptional, when you want them:');
+  say('  • PR states on cards: install the GitHub CLI and run  gh auth login');
+  say('  • Ticket and project data: connect Linear to Claude (Claude app settings, Connectors)');
+  say('  • Write/Check with Claude and background agents: run  claude  once in a terminal and log in');
+  say('  • Send to agent (macOS): turn it on in the dashboard; it walks you through the Accessibility permission');
   say('\nDone. Open http://localhost:' + port);
 }
 
@@ -132,6 +149,7 @@ function uninstall() {
     say('• Always-on service removed.');
   } else say('• No always-on service installed.');
   say('• Status line: remove "statusLine" from ~/.claude/settings.json if you no longer want it (a backup from setup may sit next to it).');
+  say(`• Skill: delete ${SKILL_DEST} if you no longer want /project-updates.`);
   say(`• Saved data (archive list, stories, usage) is in ${DATA_DIR}; delete it if you like.`);
   say('• If you created the usage task in the Claude app, delete it from the app\'s Scheduled page.');
 }
@@ -142,6 +160,6 @@ switch (cmd) {
   case 'uninstall': uninstall(); break;
   case 'usage-task': say(usageTaskMessage()); break;
   default:
-    say('Usage: cc-mission-control [start|setup|uninstall|usage-task] [--port 7777] [--no-open]');
+    say('Usage: cc-mission-control [start|setup|uninstall|usage-task] [--port 7777] [--no-open] [--no-service]');
     process.exit(1);
 }

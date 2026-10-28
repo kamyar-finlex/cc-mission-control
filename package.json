@@ -13,6 +13,7 @@
   "files": [
     "bin/",
     "public/",
+    "skills/",
     "server.mjs",
     "statusline.mjs",
     "README.md",

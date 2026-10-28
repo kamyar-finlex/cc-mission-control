@@ -1190,6 +1190,8 @@ function renderBoard() {
   const label = RANGES.find(([k]) => k === range)?.[1].toLowerCase() || 'this range';
   const empty = { working: 'Nothing running right now.', waiting: `No session waiting for you from ${label}.`, ended: `No sessions ended ${range === 'all' ? 'in the last month' : label}.` };
   renderRanges();
+  // A brand-new machine has no sessions yet: say how to get some instead of showing three blank columns.
+  if (!sessions.length) empty.working = 'No Claude Code sessions on this Mac yet. Start one in the Claude app’s Code tab, or run <code>claude</code> in a terminal: it shows up here within a second.';
   for (const k of Object.keys(cols)) {
     setHtml($(`col-${k}`), cols[k].length ? cols[k].map(cardHtml).join('') : `<div class="empty">${empty[k]}</div>`);
     $(`n-${k}`).textContent = cols[k].length;
@@ -1233,7 +1235,7 @@ function renderUsage() {
     const age = Date.now() - (plan.updatedAt || 0);
     html += `<span class="${age > 45 * 60e3 ? 'stale' : ''}" title="Source: ${esc(plan.source || '')}">updated ${ago(plan.updatedAt)} ago</span>`;
   } else {
-    html = `<span>No usage reading yet.</span>`;
+    html = `<span title="Comes from the usage task in the Claude app (see setup) or from a terminal claude session">No usage reading yet: it appears after the usage task’s first run or a terminal <code>claude</code> session.</span>`;
   }
   const waiting = refreshingSince && (plan?.updatedAt || 0) <= refreshingSince.baseline && Date.now() - refreshingSince.at < 5 * 60e3;
   if (!waiting) refreshingSince = null;

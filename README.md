@@ -6,20 +6,60 @@ When you run several Claude Code sessions at once (in the Claude desktop app, in
 
 > **Unofficial.** CC Mission Control is a community project. It is not made by, endorsed by or affiliated with Anthropic. It reads files that Claude Code and the Claude desktop app keep on your machine; those formats are internal and can change with any update, so parts of the dashboard may stop working until it is updated.
 
-## Quick start
+## Setup on a new Mac
 
-```bash
-npx cc-mission-control
-```
+**You need:**
+- a Mac
+- a Claude plan that includes Claude Code
+- Node.js 18 or newer
 
-That starts the dashboard and opens it in your browser. Requires Node.js 18 or newer and Claude Code.
+About 5 minutes.
 
-To keep it running all the time (macOS) and enable the optional extras:
+1. **Install Claude Code and use it once.** Install the [Claude desktop app](https://claude.ai/download), sign in, and start a session in its **Code** tab. You can use the terminal `claude` CLI as well or instead. The dashboard only shows sessions that Claude Code has run on this Mac, so it starts empty on a new machine.
+2. **Install Node.js** from [nodejs.org](https://nodejs.org), or run `brew install node`. Check it with:
+   ```bash
+   node -v
+   ```
+3. **Install CC Mission Control** from GitHub:
+   ```bash
+   npm install -g github:kamyar-finlex/cc-mission-control
+   ```
+   Or from a clone:
+   ```bash
+   git clone https://github.com/kamyar-finlex/cc-mission-control.git
+   cd cc-mission-control
+   npm install -g .
+   ```
+4. **Run setup:**
+   ```bash
+   cc-mission-control setup
+   ```
+   It does four things. Each is safe to run again, and it never overwrites what you already have:
+   - **Always-on service (macOS):** the dashboard starts at login and restarts if it stops. Add `--no-service` to skip it.
+   - **Status line:** lets terminal `claude` sessions report your plan limits. It's added to `~/.claude/settings.json`, backed up first, and skipped if you already have a status line.
+   - **The `project-updates` skill:** copied to `~/.claude/skills/`.
+   - **Usage task:** it prints a message to paste into a Claude app session (step 6).
+5. **Open http://localhost:7777.** If you skipped the service, start the dashboard yourself with `cc-mission-control`, which also opens the browser. Press Ctrl+C to stop it.
+6. **Optional extras**, whenever you want them:
 
-```bash
-npm install -g cc-mission-control
-cc-mission-control setup
-```
+| To get | Do this once |
+|---|---|
+| Plan limits in the bottom bar, from the Claude app | Paste the message `setup` printed into any Claude Code session in the Claude app. It creates a scheduled task that refreshes the numbers every 30 minutes while the app is open. Print it again with `cc-mission-control usage-task`. |
+| PR states on cards | Install the [GitHub CLI](https://cli.github.com) and run `gh auth login` |
+| Ticket and project data, and *Project updates* | Connect **Linear** to Claude (Claude app → Settings → Connectors), then use it in your sessions |
+| *Write with Claude*, *Check with Claude*, background agents | Run `claude` once in a terminal and log in |
+| *Send to agent* (type replies into the Claude app for you) | Turn it on in the dashboard. It guides you through the macOS Accessibility permission. |
+| Desktop notifications | Click **Notify** in the dashboard and allow notifications in your browser |
+
+Once the package is published to npm, `npm install -g cc-mission-control` and `npx cc-mission-control` work too.
+
+### What to expect on first run
+
+- **An empty board** until Claude Code has sessions. New sessions appear within a second.
+- **"No usage reading yet"** in the bottom bar until the usage task has run once, or a terminal `claude` session has drawn its status line.
+- **Permission prompts:**
+  - your browser asks before showing notifications (only if you turn them on)
+  - the first time you use *Send to agent*, macOS asks whether **node** may control **System Events**: choose **Allow**
 
 ## What you get
 
@@ -77,25 +117,10 @@ cc-mission-control setup
 **Project updates** (📝 in the header)
 - Pick Today, Yesterday or This week to see which Linear projects had work and which sessions belong to each. Sessions without a project are left out.
 - *Write updates in Claude app* opens a new Claude app session with `/project-updates` typed in. The bundled skill reads the dashboard's `GET /api/digest?range=today` and checks each session really belongs to its project. It writes one short, non-technical update per project with no code, links, names or secrets, and suggests a health. Then it **shows you all drafts and posts nothing until you say yes**. After your yes it posts them as Linear project updates.
-- Install the skill once: copy `skills/project-updates/` to `~/.claude/skills/`.
+- `cc-mission-control setup` installs the skill. Or copy `skills/project-updates/` to `~/.claude/skills/` yourself.
 
 **Usage toolbar**
 Your plan limits, like the Claude app's usage card: the current 5-hour session and the weekly limits per model, each with its reset time, plus a **Refresh** button.
-
-## Optional extras
-
-`cc-mission-control setup` offers three extras. All are optional; the board works without them.
-
-| Extra | What it unlocks | How |
-|---|---|---|
-| Always-on service (macOS) | The dashboard starts at login and restarts if it crashes | A LaunchAgent, `com.cc-mission-control` |
-| Status line | Plan limits from terminal sessions | Adds `statusLine` to `~/.claude/settings.json` (backup first; skipped if you already have one) |
-| Usage task (Claude app) | Plan limits every 30 minutes, without a terminal | Prints a message to paste into a Claude app session. It creates a scheduled task that calls the app's usage tool and saves the result. Each run uses a little of your plan. |
-
-Some features use tools you may already have:
-- **`gh`**, logged in: PR states.
-- **The Linear MCP** in your sessions: ticket titles and status.
-- **A logged-in `claude` CLI**: *Write with Claude* and *Check with Claude* (they run `claude -p` on Haiku with no tools, no settings and no saved session).
 
 ## How it works
 
@@ -107,7 +132,7 @@ Everything runs on your machine. The server is a single dependency-free Node fil
 | `~/.claude/projects/**/*.jsonl` | Transcripts: messages, tool calls, turn recaps, ticket and PR mentions |
 | `~/Library/Application Support/Claude/claude-code-sessions/**` | Claude desktop app sessions: their app id, archived flag and parent session (read-only, macOS) |
 
-It writes only to `~/.claude/cc-mission-control/`: the archive list, saved stories and open-item checks, and usage readings.
+It writes only to `~/.claude/cc-mission-control/`: its token, the archive list, saved stories and open-item checks, usage readings and images you paste into replies. `setup` also writes the `statusLine` entry in `~/.claude/settings.json`, the skill in `~/.claude/skills/`, and (macOS) its LaunchAgent.
 
 It reaches outside your machine only when you have set that up:
 - `gh api graphql`, to read PR states
@@ -116,7 +141,7 @@ It reaches outside your machine only when you have set that up:
 ## Security
 
 - The server listens on `127.0.0.1` only. It refuses requests with any other `Host` header, which blocks DNS rebinding.
-- Every action needs a per-run token that only the page it serves knows, so other websites can't trigger anything.
+- Every action needs a token that only the page it serves knows, so other websites can't trigger anything. The token is kept in `~/.claude/cc-mission-control/token`, readable only by you, so open pages keep working across restarts.
 - It can start agents and shows every transcript on your machine. **Never expose it on a network.**
 
 ## Platform support
@@ -149,12 +174,28 @@ CC Mission Control reads plain text from your sessions, so some of its behaviour
 | `RECENT_HOURS` | start of this month or week | How far back ended sessions are shown |
 | `CCMC_DATA_DIR` | `~/.claude/cc-mission-control` | Where it saves its own data |
 
+## Troubleshooting
+
+| You see | Do this |
+|---|---|
+| `Port 7777 is already in use` | It's already running: open http://localhost:7777. Or start it on another port with `--port 7788`. |
+| The board stays empty | Start a session in the Claude app's Code tab or with `claude`. The dashboard reads `~/.claude/sessions` and `~/.claude/projects`, so it needs Claude Code to have run as the same macOS user. |
+| No PR chips | Run `gh auth status`. The dashboard needs a logged-in `gh`. |
+| No tickets or projects on cards | Your sessions need to have used the Linear connector. The dashboard learns ticket facts from those replies. |
+| *Write/Check with Claude* says the CLI is logged out | Run `claude` in a terminal and log in, then try again. |
+| *Send to agent* says it isn't allowed | Enable your `node` under System Settings → Privacy & Security → Accessibility. The setup dialog in the dashboard shows its exact path. |
+| *Send to agent* says the reply didn't arrive | The reply stays on your clipboard. Paste it into the app. Keep the Claude window in view and your hands off the keyboard during the second it takes. |
+| The page says it's out of date | It reloads itself. Try the action again. |
+| The service stopped after a Node.js upgrade | Run `cc-mission-control setup` again. The service pins the Node.js it was installed with (for example, an nvm version you later removed). |
+
 ## Uninstall
 
 ```bash
 cc-mission-control uninstall
 npm uninstall -g cc-mission-control
 ```
+
+`uninstall` removes the always-on service and tells you what else you may want to delete: the status line entry, the skill, `~/.claude/cc-mission-control/`, and the usage task in the Claude app.
 
 ## Contributing
 
