@@ -37,12 +37,16 @@ test('the same name is a ticket when the session works on it', () => {
   assert.deepEqual(ids('link'), ['SHA-256']);
   scan('branch', [user('SHA-256 follow-up')]);
   assert.deepEqual(ids('branch', { branch: 'feat/sha-256-poc' }), ['SHA-256']);
-  assert.deepEqual(ids('branch', { title: 'SHA-256 POC1' }), ['SHA-256']);
+  // A title is often just the first message, so it is not evidence on its own.
+  assert.deepEqual(ids('branch', { title: 'Compare the SHA-256 of both files' }), []);
 });
 
 test('ordinary ticket ids still count from a mention', () => {
   scan('plain', [user('Pick up SHA-41 next')]);
   assert.deepEqual(ids('plain'), ['SHA-41']);
+  scan('rfc-team', [assistant([{ type: 'tool_use', id: 'r', name: 'mcp__linear__get_issue', input: { id: 'RFC-12' } }]),
+    toolResult('r', { id: 'RFC-12', title: 'Rate limiter', status: 'Todo' }), user('Then RFC-1234 and RFC-3339')]);
+  assert.deepEqual(ids('rfc-team').sort(), ['RFC-12', 'RFC-1234'], 'an RFC team keeps its own tickets; only the standard is filtered');
   scan('unknown-team', [user('Encode it as UTF-8')]);
   assert.deepEqual(ids('unknown-team'), [], 'no UTF team, so never a ticket');
 });

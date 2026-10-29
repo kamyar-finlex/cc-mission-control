@@ -160,8 +160,9 @@ export async function linearTick(sessions) {
 
 // Names of standards and algorithms that look like ticket ids. When a team's key matches one
 // (a SHA team has a real SHA-256), a bare mention is still the algorithm: it only counts as a
-// ticket with more behind it (the branch, the title, a Linear tool call or link).
-const LOOKS_LIKE_A_STANDARD = /^(SHA-(1|2|3|224|256|384|512)|UTF-(7|8|16|32)|MD-[245]|ISO-\d{3,5}|RFC-\d{3,4}|AES-(128|192|256)|RSA-(1024|2048|3072|4096)|X-509|PEP-\d{1,4}|CP-125\d|ES-(256|384|512)|HS-(256|384|512)|RS-(256|384|512)|P-(256|384|521))$/;
+// ticket with more behind it (the branch, a Linear tool call or link). Not the title: without a
+// custom name, a session's title is just its first message.
+const LOOKS_LIKE_A_STANDARD = /^(SHA-(1|2|3|224|256|384|512)|UTF-(7|8|16|32)|MD-[245]|ISO-(639|3166|4217|8601|9001|27001)|RFC-(2119|3339|4122|5322|6749|7519|8259|9110)|AES-(128|192|256)|RSA-(1024|2048|3072|4096)|X-509|PEP-\d{1,4}|CP-125\d|ES-(256|384|512)|HS-(256|384|512)|RS-(256|384|512)|P-(256|384|521))$/;
 
 // Strongest signals first: the git branch / worktree, then the title, then
 // Linear tool calls, then ids the user typed. Only confirmed team keys count,
@@ -171,9 +172,8 @@ export function linearFor(sid, { title, branch, worktree }) {
   const score = new Map(st?.refs);
   const onBranch = new Set();
   for (const [, p, n] of `${branch || ''} ${worktree || ''}`.toUpperCase().matchAll(ISSUE_ID)) { bump(score, `${p}-${n}`, 100); onBranch.add(`${p}-${n}`); }
-  const inTitle = new Set();
-  for (const [, p, n] of (title || '').matchAll(ISSUE_ID)) { bump(score, `${p}-${n}`, 50); inTitle.add(`${p}-${n}`); }
-  const evidence = (id) => !LOOKS_LIKE_A_STANDARD.test(id) || onBranch.has(id) || inTitle.has(id) || st?.strong.has(id);
+  for (const [, p, n] of (title || '').matchAll(ISSUE_ID)) bump(score, `${p}-${n}`, 50);
+  const evidence = (id) => !LOOKS_LIKE_A_STANDARD.test(id) || onBranch.has(id) || st?.strong.has(id);
   // The ten most relevant tickets, newest first: the branch's ticket is the
   // current task, then the one the session touched last.
   const lastAt = (id) => (onBranch.has(id) ? Infinity : st?.refsAt.get(id) || 0);
