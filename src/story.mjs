@@ -74,7 +74,7 @@ export function aliveReason(s, items) {
       ? { tone: 'ship', text: `PR #${p.number} is approved. Merge me.` }
       : { tone: 'wip', text: `PR #${p.number} is waiting for review. Don't archive me.` };
   const notes = items.filter((i) => i.kind === 'note').map((i) => i.text);
-  const blocked = notes.find((n) => /\bblock(ed|s|ing)\b|waits? (on|for)|awaiting|depends on/i.test(n));
+  const blocked = notes.find((n) => /\bblock(ed|s|ing)\b|\bwait(s|ing)? (on|for)|awaiting|depends on/i.test(n));
   if (blocked) return { tone: 'block', text: `Blocked: ${clip(blocked, 120)}` };
   const unshipped = notes.find((n) => /\b(deploy|release|beta|prod|live|publish|ship)/i.test(n));
   if (unshipped) return { tone: 'ship', text: `Not shipped yet: ${clip(unshipped, 120)}` };

@@ -61,9 +61,9 @@ export async function act(name, body) {
       return { ok: true, out: s.appId ? 'Archived in the console. To archive it in the Claude app too, use the app.' : 'Archived.' };
     }
     case 'check-open':
-      return checkOpen(s.sessionId);
+      return checkOpen(s);
     case 'summarize':
-      return writeSummary(s.sessionId);
+      return writeSummary(s);
     case 'unarchive':
       if (s.appArchived && !consoleArchive.has(s.sessionId)) return { ok: false, out: 'This one was archived in the Claude app. Unarchive it there.' };
       consoleArchive.delete(s.sessionId);

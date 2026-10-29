@@ -10,7 +10,7 @@ import { HOST, PORT, SESS_DIR } from './src/config.mjs';
 import { server } from './src/http.mjs';
 import { linearTick } from './src/linear.mjs';
 import { prTick } from './src/prs.mjs';
-import { clients, tick } from './src/state.mjs';
+import { clients, state, tick } from './src/state.mjs';
 import { scanTranscripts } from './src/transcript.mjs';
 
 await scanTranscripts();
@@ -18,9 +18,9 @@ await scanAppMeta();
 await tick();
 setInterval(scanAppMeta, 4000);
 setInterval(tick, 1000);
-linearTick().then(prTick);
-setInterval(linearTick, 3000);
-setInterval(prTick, 30000);
+linearTick(state.sessions).then(() => prTick(state.sessions));
+setInterval(() => linearTick(state.sessions), 3000);
+setInterval(() => prTick(state.sessions), 30000);
 setInterval(scanTranscripts, 15000);
 setInterval(() => { for (const c of clients) c.write(': ping\n\n'); }, 20000);
 try { fs.watch(SESS_DIR, () => tick()); } catch { /* polling covers it */ }

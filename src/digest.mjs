@@ -1,5 +1,4 @@
 import { linearScans } from './linear.mjs';
-import { state } from './state.mjs';
 
 // The daily digest the project-updates skill reads.
 // Everything the project-updates skill needs for one day, grouped by Linear project.
@@ -13,13 +12,13 @@ function dayRange(range) {
   return { from: day(0), to: Infinity, label: 'today' };
 }
 
-export function digest(range) {
+export function digest(sessions, range) {
   const { from, to, label } = dayRange(range);
   const inDay = (ts) => ts >= from && ts < to;
   const projects = new Map();
   const unassigned = [];
-  for (const s of state.sessions) {
-    if (!inDay(s.lastTs || 0)) continue;
+  // A session counts when someone asked or a turn ended that day, whenever it was last active.
+  for (const s of sessions) {
     const st = linearScans.get(s.sessionId);
     const recaps = (st?.story.recaps || []).filter((r) => inDay(r.ts)).map((r) => r.text);
     const asks = (st?.story.asks || []).filter((a) => inDay(a.ts)).map((a) => a.text);

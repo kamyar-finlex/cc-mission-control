@@ -4,7 +4,6 @@ import path from 'node:path';
 import { loadJson, saveJson } from '../lib/store.mjs';
 import { CLAUDE_BIN, DATA_DIR } from './config.mjs';
 import { linearScans } from './linear.mjs';
-import { state } from './state.mjs';
 import { sessionDigest, stitch } from './story.mjs';
 import { clip } from './transcript.mjs';
 
@@ -55,8 +54,8 @@ async function runHaiku(prompt) {
   return { ok: true, text: out.o };
 }
 
-export async function writeSummary(sid) {
-  const s = state.sessions.find((x) => x.sessionId === sid);
+export async function writeSummary(s) {
+  const sid = s?.sessionId;
   const st = linearScans.get(sid);
   if (!s || !st) return { ok: false, out: 'Session not found yet. Try again in a few seconds.' };
   if (writing.has(sid)) return { ok: false, out: 'Already writing this summary.' };
@@ -77,8 +76,8 @@ if (!isObj(checks)) checks = {};
 const checking = new Set();
 
 // Claude reads the whole digest and lists what is still open, each with a reply the user could send.
-export async function checkOpen(sid) {
-  const s = state.sessions.find((x) => x.sessionId === sid);
+export async function checkOpen(s) {
+  const sid = s?.sessionId;
   const st = linearScans.get(sid);
   if (!s || !st) return { ok: false, out: 'Session not found yet. Try again in a few seconds.' };
   if (checking.has(sid)) return { ok: false, out: 'Already checking this session.' };
