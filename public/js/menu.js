@@ -5,20 +5,37 @@ import { ago, esc } from './util.js';
 
 // The right-click menu and the PR dropdown.
 
+let menuOpener = null;
 export function showMenu(x, y, html) {
   const m = $('menu');
+  if (!m.classList.contains('open')) menuOpener = document.activeElement;
   m.innerHTML = html; m.classList.add('open');
   const r = m.getBoundingClientRect();
   m.style.left = `${Math.max(8, Math.min(x, innerWidth - r.width - 8))}px`;
   m.style.top = `${Math.max(8, Math.min(y, innerHeight - r.height - 8))}px`;
   m.querySelector('.mi')?.focus();
 }
-export function hideMenu() { $('menu').classList.remove('open'); $('menu').dataset.for = ''; }
+export function hideMenu() {
+  const m = $('menu');
+  const hadFocus = m.contains(document.activeElement);
+  m.classList.remove('open'); m.dataset.for = '';
+  if (hadFocus && menuOpener?.isConnected) menuOpener.focus(); // only when the menu held the focus
+  menuOpener = null;
+}
+// Arrow keys, Home and End move between the menu's items.
+$('menu').addEventListener('keydown', (e) => {
+  const items = [...$('menu').querySelectorAll('.mi')];
+  const i = items.indexOf(document.activeElement);
+  const to = { ArrowDown: i + 1, ArrowUp: i - 1, Home: 0, End: items.length - 1 }[e.key];
+  if (to === undefined || !items.length) return;
+  e.preventDefault();
+  items[(to + items.length) % items.length].focus();
+});
 
 const mi = (o) => o.href
   ? `<a class="mi" role="menuitem" href="${esc(o.href)}" target="_blank" rel="noopener"${o.title ? ` title="${esc(o.title)}"` : ''}><span class="ic">${o.icon || ''}</span><span class="tx">${o.html || esc(o.label)}</span>${o.sub ? `<span class="sub">${esc(o.sub)}</span>` : ''}</a>`
   : `<button class="mi ${o.danger ? 'danger' : ''}" role="menuitem" data-mact="${esc(o.act)}" data-sid="${esc(o.sid)}"${o.title ? ` title="${esc(o.title)}"` : ''}><span class="ic">${o.icon || ''}</span><span class="tx">${esc(o.label)}</span>${o.sub ? `<span class="sub">${esc(o.sub)}</span>` : ''}</button>`;
-export const ticketItem = (t) => mi({ href: t.url || '#', icon: `<span class="sdot ${stClass(t)}"></span>`, label: `${t.id} ${t.title || ''}`, sub: t.status || '', title: ticketTip(t) + (t.onBranch ? '\nOn this branch' : t.lastAt ? `\nLast touched ${ago(t.lastAt)} ago` : '') });
+export const ticketItem = (t) => mi({ href: t.url || '#', icon: `<span class="sdot ${stClass(t)}" aria-hidden="true"></span>`, label: `${t.id} ${t.title || ''}`, sub: t.status || '', title: ticketTip(t) + (t.onBranch ? '\nOn this branch' : t.lastAt ? `\nLast touched ${ago(t.lastAt)} ago` : '') });
 export const prItem = (p) => mi({ href: p.url, icon: `<span class="prchip ${prClass(p)}" style="padding:0 3px">${PR_ICON}</span>`, label: `#${p.number} ${p.title || ''}`, sub: p.state === 'OPEN' ? (p.isDraft ? 'Draft' : REVIEW[p.review] || 'Open') : p.state[0] + p.state.slice(1).toLowerCase(), title: prTip(p) });
 
 function sessionMenu(s, { inDrawer = false } = {}) {

@@ -32,7 +32,7 @@ function whyRow(it, fromClaude) {
   if (it.kind === 'ticket') {
     const started = it.statusType === 'started' || /progress|review/i.test(it.status || '');
     return `<a class="wrow" href="${esc(it.url || '#')}" target="_blank" rel="noopener" title="${esc(it.text)}">
-      <span class="wi"><span class="sdot ${stClass(it)}"></span></span><span class="wid">${esc(it.id)}</span>
+      <span class="wi"><span class="sdot ${stClass(it)}" role="img" aria-label="${esc(it.status || 'No status')}"></span></span><span class="wid">${esc(it.id)}</span>
       <span class="wt">${esc(it.title || '')}</span><span class="wst ${started ? 's-started' : ''}">${esc(it.status || '')}</span></a>`;
   }
   if (it.kind === 'pr') {

@@ -9,7 +9,7 @@
 </head>
 <body>
 <header>
-  <div class="brand"><span class="live" id="live" title="Live connection"></span>CC Mission Control</div>
+  <div class="brand"><span class="live" id="live" role="img" aria-label="Connecting" title="Live connection"></span>CC Mission Control</div>
   <div class="ranges" id="ranges" role="group" aria-label="Show sessions active in"></div>
   <div class="stats" id="stats"></div>
   <div class="spacer"></div>
@@ -21,9 +21,9 @@
   <button class="primary" id="newBtn">+ New agent <kbd style="color:#fff;border-color:#ffffff66">n</kbd></button>
 </header>
 <main>
-  <section class="col"><h2><span class="dot working"></span>Working <span class="n" id="n-working">0</span></h2><div class="list" id="col-working"></div></section>
-  <section class="col"><h2><span class="dot waiting"></span>Waiting for you <span class="n" id="n-waiting">0</span></h2><div class="list" id="col-waiting"></div></section>
-  <section class="col"><h2><span class="dot"></span>Ended <span class="n" id="n-ended">0</span></h2><div class="list" id="col-ended"></div></section>
+  <section class="col"><h2><span class="dot working" aria-hidden="true"></span>Working <span class="n" id="n-working">0</span></h2><div class="list" id="col-working"></div></section>
+  <section class="col"><h2><span class="dot waiting" aria-hidden="true"></span>Waiting for you <span class="n" id="n-waiting">0</span></h2><div class="list" id="col-waiting"></div></section>
+  <section class="col"><h2><span class="dot" aria-hidden="true"></span>Ended <span class="n" id="n-ended">0</span></h2><div class="list" id="col-ended"></div></section>
 </main>
 <footer id="usage"></footer>
 
@@ -106,7 +106,7 @@
 <div id="qr" hidden><div class="qr-head"><span class="dot" id="qr-dot"></span><span class="lbl">Reply</span><b id="qr-title"></b><button class="iconbtn" id="qr-close" title="Close (Esc)">✕</button></div><div id="qr-body"></div></div>
 <div id="lightbox" hidden><img alt=""></div>
 <div id="menu" role="menu"></div>
-<div id="toast"></div>
+<div id="toast" role="status" aria-live="polite"></div>
 
 <script type="module" src="/js/main.js"></script>
 </body>
