@@ -94,7 +94,11 @@ export function sse(res) {
 export const send = (res, event, data) => res.write(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`);
 
 // Changes whenever any page file does, so open pages reload themselves onto the new version.
+// Checked at most every 5 s: it only changes when the console is updated.
+let pageChecked = 0;
 async function pageVersion() {
+  if (uiVersion && Date.now() - pageChecked < 5000) return uiVersion;
+  pageChecked = Date.now();
   const dir = path.join(ROOT, 'public');
   const files = ['index.html', 'app.css', ...(await fsp.readdir(path.join(dir, 'js'))).map((f) => `js/${f}`)];
   const times = await Promise.all(files.map(async (f) => (await fsp.stat(path.join(dir, f))).mtimeMs));
