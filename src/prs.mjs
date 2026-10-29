@@ -5,13 +5,19 @@ import { state } from './state.mjs';
 // Pull requests (read-only GitHub lookups via the gh CLI).
 
 const prState = new Map(); // "owner/repo#n" -> { state, isDraft, review, checks, title, url, fetchedAt }
+// Moves only when what a card shows about a PR changes (not on every refresh), so cached cards know when to rebuild.
+export let prEpoch = 0;
+const shown = (pr) => { if (!pr) return ''; const { fetchedAt, ...rest } = pr; return JSON.stringify(rest); };
+const setPr = (key, pr) => { if (shown(pr) !== shown(prState.get(key))) prEpoch++; prState.set(key, pr); };
 
 export function prsFor(sid) {
   const st = linearScans.get(sid);
   if (!st) return [];
   return [...st.prs].filter(([, n]) => n >= 2).sort((a, b) => b[1] - a[1]).slice(0, 8).map(([key]) => {
     const [repo, n] = key.split('#');
-    return { key, repo, number: Number(n), url: `https://github.com/${repo}/pull/${n}`, ...prState.get(key) };
+    // fetchedAt only schedules the next lookup; leaving it out keeps a refresh that changed nothing from changing the card.
+    const { fetchedAt, ...pr } = prState.get(key) || {};
+    return { key, repo, number: Number(n), url: `https://github.com/${repo}/pull/${n}`, ...pr };
   });
 }
 
@@ -42,11 +48,11 @@ export async function prTick() {
       try { data = JSON.parse(r.stdout).data || {}; } catch { /* network or auth error, retry next tick */ }
       chunk.forEach((key, j) => {
         const pr = data[`p${j}`]?.pullRequest;
-        if (pr) prState.set(key, {
+        if (pr) setPr(key, {
           state: pr.state, isDraft: pr.isDraft, review: pr.reviewDecision, title: pr.title, url: pr.url, mergedAt: pr.mergedAt,
           checks: pr.commits?.nodes?.[0]?.commit?.statusCheckRollup?.state, fetchedAt: now,
         });
-        else if (data && Object.keys(data).length) prState.set(key, { state: 'UNKNOWN', fetchedAt: now }); // no access or deleted
+        else if (data && Object.keys(data).length) setPr(key, { state: 'UNKNOWN', fetchedAt: now }); // no access or deleted
       });
     }
   } catch (e) { console.error('pr lookup failed', e); }

@@ -7,6 +7,9 @@ import { renderWhy } from './why.js';
 
 // The live connection: board state over SSE, and reloading when a newer page is deployed.
 
+// Newest activity first, ties by id: the same order the server sends (src/state.mjs bySessionOrder).
+const bySessionOrder = (a, b) => (b.lastTs || 0) - (a.lastTs || 0) || (a.sessionId < b.sessionId ? -1 : a.sessionId > b.sessionId ? 1 : 0);
+
 function onState(list) {
   for (const s of list) {
     const before = prevPhase.get(s.sessionId);
@@ -41,11 +44,24 @@ function reloadWhenIdle(retry) {
 }
 export function connect() {
   const es = new EventSource('/events');
+  // A newer console page was deployed: reload once nothing is being typed or shown in a dialog.
+  const checkVersion = (v) => { if (v) { if (!uiVersion) uiVersion = v; else if (v !== uiVersion) reloadWhenIdle(); } };
+  // The whole board once, on every (re)connect...
   es.addEventListener('state', (e) => {
     const d = JSON.parse(e.data);
-    // A newer console page was deployed: reload once nothing is being typed or shown in a dialog.
-    if (d.uiVersion) { if (!uiVersion) uiVersion = d.uiVersion; else if (d.uiVersion !== uiVersion) reloadWhenIdle(); }
+    checkVersion(d.uiVersion);
     ui.usage = d.usage || ui.usage; onState(d.sessions);
+  });
+  // ...then only what changed: sessions added or updated, sessions gone, new usage, a new page version.
+  es.addEventListener('patch', (e) => {
+    const d = JSON.parse(e.data);
+    checkVersion(d.uiVersion);
+    if (d.usage) ui.usage = d.usage;
+    if (!d.upsert && !d.remove) { onState(ui.sessions); return; }
+    const byId = new Map(ui.sessions.map((s) => [s.sessionId, s]));
+    for (const id of d.remove || []) byId.delete(id);
+    for (const s of d.upsert || []) byId.set(s.sessionId, s);
+    onState([...byId.values()].sort(bySessionOrder));
   });
   es.onopen = () => $('live').classList.add('on');
   es.onerror = async () => {

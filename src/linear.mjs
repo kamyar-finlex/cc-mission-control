@@ -15,6 +15,9 @@ const projectInfo = new Map(); // project name -> { name, url, status }
 const teamKeys = new Set(); // ticket prefixes Linear has confirmed, e.g. ENG
 const projectNames = new Set(); // real project names (ids and slugs from tool inputs are not)
 export const linearScans = new Map(); // sessionId -> incremental scan state
+// Moves only when the shared catalog really changes, so cached cards know when to rebuild.
+export let linearEpoch = 0;
+const addTo = (set, v) => { if (!set.has(v)) { set.add(v); linearEpoch++; } };
 
 // Some Linear replies carry HTML-escaped names ("A &amp; B"); keep the real text.
 const unescapeHtml = (t) => t.replace(/&(amp|lt|gt|quot|#39);/g, (_, e) => ({ amp: '&', lt: '<', gt: '>', quot: '"', '#39': "'" }[e]));
@@ -33,21 +36,23 @@ function learn(o, depth = 0) {
         parentId: o.parentId, updatedAt: o.updatedAt,
       };
       for (const k of Object.keys(next)) if (next[k] === undefined || next[k] === null) delete next[k];
-      catalog.set(o.id, { ...prev, ...next });
-      if (next.project) projectNames.add(next.project);
+      const merged = { ...prev, ...next };
+      if (JSON.stringify(merged) !== JSON.stringify(prev)) { catalog.set(o.id, merged); linearEpoch++; }
+      if (next.project) addTo(projectNames, next.project);
     }
-    teamKeys.add(o.id.split('-')[0]);
+    addTo(teamKeys, o.id.split('-')[0]);
   } else if (typeof o.name === 'string' && typeof o.url === 'string' && o.url.includes('linear.app/') && o.url.includes('/project/')) {
     const name = unescapeHtml(o.name);
-    projectInfo.set(name, { name, url: o.url, status: nameOf(o.status) });
-    projectNames.add(name);
+    const info = { name, url: o.url, status: nameOf(o.status) };
+    if (JSON.stringify(info) !== JSON.stringify(projectInfo.get(name))) { projectInfo.set(name, info); linearEpoch++; }
+    addTo(projectNames, name);
   }
   for (const v of Object.values(o)) if (v && typeof v === 'object') learn(v, depth + 1);
 }
 
 function mentions(text, st, weight) {
   for (const [, p, n] of text.matchAll(ISSUE_ID)) ref(st, `${p}-${n}`, weight);
-  for (const [, id] of text.matchAll(ISSUE_URL)) { const up = id.toUpperCase(); ref(st, up, weight + 1); teamKeys.add(up.split('-')[0]); }
+  for (const [, id] of text.matchAll(ISSUE_URL)) { const up = id.toUpperCase(); ref(st, up, weight + 1); addTo(teamKeys, up.split('-')[0]); }
 }
 // Scores a ticket mention and remembers when the session last touched it.
 function ref(st, id, weight) {

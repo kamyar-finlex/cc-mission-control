@@ -8,6 +8,7 @@ import { tokenMatches, readCookie, isAuthed, mayAct, cookieName, sessionCookie, 
 import { planStatusLine } from '../lib/settings.mjs';
 import { parseArgs } from '../lib/cli-args.mjs';
 import { loadJson, writeFileAtomicSync, ensureDataDir } from '../lib/store.mjs';
+import { forEachLimit } from '../lib/limit.mjs';
 
 const TOKEN = 'a'.repeat(32);
 const tmp = () => fs.mkdtempSync(path.join(os.tmpdir(), 'ccmc-test-'));
@@ -125,4 +126,17 @@ test('JSON stores: a broken file is moved aside, never silently overwritten', ()
   fs.chmodSync(shared, 0o755);
   ensureDataDir(shared);
   assert.equal(fs.statSync(shared).mode & 0o777, 0o755, 'an existing folder keeps its permissions');
+});
+
+test('forEachLimit: every item, never more than the limit at once', async () => {
+  let inFlight = 0, peak = 0;
+  const seen = [];
+  await forEachLimit([...Array(25).keys()], 4, async (i) => {
+    inFlight++; peak = Math.max(peak, inFlight);
+    await new Promise((r) => setTimeout(r, (i * 7) % 5));
+    seen.push(i); inFlight--;
+  });
+  assert.equal(peak, 4);
+  assert.deepEqual(seen.sort((a, b) => a - b), [...Array(25).keys()]);
+  await forEachLimit([], 8, () => { throw new Error('never called'); });
 });

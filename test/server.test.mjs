@@ -18,6 +18,7 @@ const HTML = Buffer.from('<script>alert(1)</script>').toString('base64');
 // A broken server must fail a test, never hang the run.
 const test = (name, fn) => nodeTest(name, { timeout: 15000 }, fn);
 
+let serverErrors = '';
 let home, dataDir, work, stubOut, server, port, token, cookie;
 
 const freePort = () => new Promise((resolve) => {
@@ -86,11 +87,11 @@ before(async () => {
 
   port = await freePort();
   server = spawn(process.execPath, [path.join(ROOT, 'server.mjs')], {
-    env: { PATH: process.env.PATH, HOME: home, CCMC_DATA_DIR: dataDir, PORT: String(port), CLAUDE_BIN: stub, STUB_OUT: stubOut },
+    env: { PATH: process.env.PATH, HOME: home, CCMC_DATA_DIR: dataDir, PORT: String(port), CLAUDE_BIN: stub, STUB_OUT: stubOut, CCMC_VERIFY_CACHE: '1' },
     stdio: ['ignore', 'pipe', 'pipe'],
   });
   process.on('exit', () => server.kill());
-  server.stderr.on('data', () => {}); // logged errors are expected in some tests
+  server.stderr.on('data', (d) => { serverErrors += d; }); // logged errors are expected in some tests
   await new Promise((resolve, reject) => {
     const t = setTimeout(() => reject(new Error('server did not start')), 15000);
     server.stdout.on('data', (d) => { if (String(d).includes('CC Mission Control →')) { clearTimeout(t); resolve(); } });
@@ -224,7 +225,49 @@ test('transcript images: only image types are kept and served', async () => {
   assert.equal(img.headers['x-content-type-options'], 'nosniff');
 });
 
+// Collects SSE events from a stream until `until(events)` is true.
+function sseUntil(pathname, until, ms = 8000) {
+  return new Promise((resolve, reject) => {
+    const events = [];
+    const req = http.get({ host: '127.0.0.1', port, path: pathname, headers: { Host: `localhost:${port}`, Cookie: cookie } }, (res) => {
+      let buf = '';
+      res.on('data', (c) => {
+        buf += c;
+        let i;
+        while ((i = buf.indexOf('\n\n')) >= 0) {
+          const block = buf.slice(0, i); buf = buf.slice(i + 2);
+          const m = block.match(/^event: (\w+)\ndata: (.*)$/m);
+          if (m) events.push({ event: m[1], data: JSON.parse(m[2]) });
+        }
+        if (until(events)) { req.destroy(); resolve(events); }
+      });
+    });
+    req.on('error', (e) => { if (e.code !== 'ECONNRESET') reject(e); });
+    setTimeout(() => { req.destroy(); reject(new Error(`no matching events; got ${events.map((e) => e.event)}`)); }, ms);
+  });
+}
+
+test('pages get the whole board once, then patches with only what changed', async () => {
+  const isArchivePatch = (e) => e.event === 'patch' && e.data.upsert?.some((s) => s.sessionId === SID && s.archived);
+  const gotState = sseUntil('/events', (ev) => ev.some(isArchivePatch));
+  await new Promise((r) => setTimeout(r, 300));
+  await act('archive', { sessionId: SID });
+  const events = await gotState;
+  assert.equal(events[0].event, 'state');
+  assert.ok(events[0].data.sessions.some((s) => s.sessionId === SID));
+  const patch = events.find(isArchivePatch).data;
+  assert.deepEqual(patch.upsert.map((s) => s.sessionId), [SID], 'only the archived session');
+  assert.equal(patch.upsert[0].archived, true);
+  assert.equal(patch.remove, undefined);
+  await act('unarchive', { sessionId: SID });
+});
+
 test('the data folder and token are owner-only', () => {
   assert.equal(fs.statSync(dataDir).mode & 0o777, 0o700);
   assert.equal(fs.statSync(path.join(dataDir, 'token')).mode & 0o777, 0o600);
+});
+
+test('the card cache never served a stale card during these tests', async () => {
+  await new Promise((r) => setTimeout(r, 1500)); // a tick after the last action
+  assert.doesNotMatch(serverErrors, /card cache stale/);
 });
