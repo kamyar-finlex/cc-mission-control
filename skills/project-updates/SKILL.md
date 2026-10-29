@@ -10,10 +10,12 @@ Turn a day of Claude Code sessions into one short update per Linear project. Not
 ## 1. Get the digest
 
 ```bash
-curl -s -H 'Host: localhost:7777' 'http://127.0.0.1:7777/api/digest?range=today'
+curl -s -f -H 'Host: localhost:7777' -H "X-Console-Token: $(cat "${CCMC_DATA_DIR:-$HOME/.claude/cc-mission-control}/token")" 'http://127.0.0.1:7777/api/digest?range=today'
 ```
 
-Use `range=yesterday` or `range=week` if the user asked for that. If the request fails, CC Mission Control isn't running. Tell the user to start it with `npx cc-mission-control`, then stop.
+The console only answers requests that carry its token, which this command reads from the console's owner-only token file. Never print, echo or repeat the token.
+
+Use `range=yesterday` or `range=week` if the user asked for that. If the request fails, CC Mission Control isn't running or the token file is missing. Tell the user to start it with `cc-mission-control` (or `cc-mission-control setup` for the always-on service), then stop.
 
 The JSON has:
 - `projects`: each item has `name`, an optional `url`, and its `sessions`. Each session has `title`, `story`, `recapsThatDay`, `asksThatDay`, `stillOpen`, `tickets`, `pullRequests` and `deployments`.

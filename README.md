@@ -34,12 +34,16 @@ About 5 minutes.
    ```bash
    cc-mission-control setup
    ```
-   It does four things. Each is safe to run again, and it never overwrites what you already have:
+   It does four things. Each is safe to run again:
    - **Always-on service (macOS):** the dashboard starts at login and restarts if it stops. Add `--no-service` to skip it.
-   - **Status line:** lets terminal `claude` sessions report your plan limits. It's added to `~/.claude/settings.json`, backed up first, and skipped if you already have a status line.
-   - **The `project-updates` skill:** copied to `~/.claude/skills/`.
+   - **Status line:** lets terminal `claude` sessions report your plan limits. It's added to `~/.claude/settings.json` (backed up first, written in one step) only if you have no status line yet. A status line of your own is never touched, and a `settings.json` that isn't valid JSON is left exactly as it is. Running setup again after a Node.js upgrade points it at the new Node.js.
+   - **The `project-updates` skill:** copied to `~/.claude/skills/`. Running setup again updates it; the previous copy is kept as `SKILL.md.bak`.
    - **Usage task:** it prints a message to paste into a Claude app session (step 6).
-5. **Open http://localhost:7777.** If you skipped the service, start the dashboard yourself with `cc-mission-control`, which also opens the browser. Press Ctrl+C to stop it.
+5. **Open it:**
+   ```bash
+   cc-mission-control open
+   ```
+   This opens http://localhost:7777 with a one-time link that signs your browser in (see [Security](#security)); the browser stays signed in after that. If you skipped the service, start the dashboard yourself with `cc-mission-control`, which also opens it signed in. Press Ctrl+C to stop it.
 6. **Optional extras**, whenever you want them:
 
 | To get | Do this once |
@@ -143,7 +147,7 @@ Everything runs on your machine. The server is a single dependency-free Node fil
 | `~/.claude/projects/**/*.jsonl` | Transcripts: messages, tool calls, turn recaps, ticket and PR mentions |
 | `~/Library/Application Support/Claude/claude-code-sessions/**` | Claude desktop app sessions: their app id, archived flag and parent session (read-only, macOS) |
 
-It writes only to `~/.claude/cc-mission-control/` (and, for the optional avatar, cached speech in the system temp folder): its token, the archive list, saved stories and open-item checks, usage readings and images you paste into replies. `setup` also writes the `statusLine` entry in `~/.claude/settings.json`, the skill in `~/.claude/skills/`, and (macOS) its LaunchAgent.
+It writes only to `~/.claude/cc-mission-control/` (owner-only; and, for the optional avatar, cached speech in the system temp folder): its token, the archive list, saved stories and open-item checks, usage readings and images you paste into replies. `setup` also writes the `statusLine` entry in `~/.claude/settings.json`, the skill in `~/.claude/skills/`, and (macOS) its LaunchAgent.
 
 It reaches outside your machine only when you have set that up:
 - `gh api graphql`, to read PR states
@@ -152,7 +156,10 @@ It reaches outside your machine only when you have set that up:
 ## Security
 
 - The server listens on `127.0.0.1` only. It refuses requests with any other `Host` header, which blocks DNS rebinding.
-- Every action needs a token that only the page it serves knows, so other websites can't trigger anything. The token is kept in `~/.claude/cc-mission-control/token`, readable only by you, so open pages keep working across restarts.
+- Everything except a short sign-in page needs a token. Browsers get it once, from the link `cc-mission-control open` opens, as an `HttpOnly`, `SameSite=Strict` cookie, so the token never appears in the page and other local programs can't read it from there. Scripts (such as the `project-updates` skill) send it in an `X-Console-Token` header, read from `~/.claude/cc-mission-control/token`, which only you can read.
+- Actions also need a header that only the console's own page sends (and, when the browser sends one, a local `Origin`), so other websites can't trigger anything.
+- The page runs under a strict Content-Security-Policy (only its own script, by nonce), and every response carries `X-Content-Type-Options: nosniff`. Transcript images are served only as PNG, JPEG, GIF or WebP.
+- Agents started from the console can't skip permission prompts: `bypassPermissions` and `dontAsk` are refused, and your text is always passed to `claude` after `--`, so it is never read as an option.
 - It can start agents and shows every transcript on your machine. **Never expose it on a network.**
 
 ## Platform support
@@ -191,7 +198,8 @@ CC Mission Control reads plain text from your sessions, so some of its behaviour
 
 | You see | Do this |
 |---|---|
-| `Port 7777 is already in use` | It's already running: open http://localhost:7777. Or start it on another port with `--port 7788`. |
+| `Port 7777 is already in use` | It's already running: run `cc-mission-control open`. Or start it on another port with `--port 7788`. |
+| The page asks you to sign in | Run `cc-mission-control open` (add `--port` if you use another port). Each browser signs in once. |
 | The board stays empty | Start a session in the Claude app's Code tab or with `claude`. The dashboard reads `~/.claude/sessions` and `~/.claude/projects`, so it needs Claude Code to have run as the same macOS user. |
 | No PR chips | Run `gh auth status`. The dashboard needs a logged-in `gh`. |
 | No tickets or projects on cards | Your sessions need to have used the Linear connector. The dashboard learns ticket facts from those replies. |
@@ -212,7 +220,7 @@ npm uninstall -g cc-mission-control
 
 ## Contributing
 
-Issues and pull requests are welcome. The whole app is three files: `server.mjs` (data and actions), `public/index.html` (the page) and `statusline.mjs`. Please keep it dependency-free.
+Issues and pull requests are welcome. The app is `server.mjs` (data and actions), `public/index.html` (the page), `statusline.mjs`, `bin/cli.mjs` and small helpers in `lib/`. Please keep it dependency-free, and run `npm run check` and `npm test` before you open a pull request.
 
 ## License
 
