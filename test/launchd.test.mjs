@@ -37,7 +37,7 @@ const opts = (fake, extra = {}) => {
   const written = [];
   return {
     slept, written,
-    args: { uid: 501, label: 'com.cc-mission-control', plist: '/p.plist', writePlist: () => written.push(fake.state()), run: fake.run, sleep: (ms) => slept.push(ms), ...extra },
+    args: { uid: 501, label: 'com.cc-mission-control', plist: '/p.plist', writePlist: () => written.push(fake.state()), run: fake.run, sleep: (ms) => slept.push(ms), now: () => slept.reduce((a, b) => a + b, 0), ...extra },
   };
 };
 
@@ -70,8 +70,17 @@ test('a bootstrap that still fails is retried with growing pauses', () => {
 test('gives up with launchctl\'s own message after the last try', () => {
   const fake = fakeLaunchd({ loaded: false, bootstrapFailures: 99 });
   const o = opts(fake, { tries: 3 });
-  assert.deepEqual(reloadAgent(o.args), EIO);
+  assert.deepEqual(reloadAgent(o.args), { ...EIO, written: true });
   assert.equal(fake.calls.filter((c) => c === 'bootstrap').length, 3);
+});
+
+test('the unload deadline counts real time, not just pauses', () => {
+  const fake = fakeLaunchd({ unloadPolls: Infinity });
+  let clock = 0;
+  const slowRun = (args) => { clock += 400; return fake.run(args); }; // each launchctl call takes 400 ms
+  const o = opts(fake, { run: slowRun, now: () => clock, unloadMs: 2000, pollMs: 100 });
+  assert.equal(reloadAgent(o.args).ok, false);
+  assert.ok(clock < 3000, `gave up after ${clock} ms`);
 });
 
 test('a service that never stops is reported, not bootstrapped over', () => {
@@ -80,6 +89,7 @@ test('a service that never stops is reported, not bootstrapped over', () => {
   const r = reloadAgent(o.args);
   assert.equal(r.ok, false);
   assert.match(r.error, /did not stop within 1 s/);
+  assert.equal(r.written, false);
   assert.equal(fake.calls.includes('bootstrap'), false);
   assert.deepEqual(o.written, [], 'the plist is left as it was');
   assert.equal(o.slept.length, 10);

@@ -122,6 +122,10 @@ function installService() {
   }
   fs.mkdirSync(path.dirname(PLIST), { recursive: true });
   const r = reloadAgent({ uid: process.getuid(), label: LABEL, plist: PLIST, writePlist: () => fs.writeFileSync(PLIST, plist()) });
+  if (!r.ok && !r.written) {
+    say(`• Always-on service: not changed, because ${r.error}. Run  cc-mission-control setup  again in a moment.`);
+    return;
+  }
   if (!r.ok) {
     say(`• Always-on service: written to ${PLIST}, but launchctl could not start it (${r.error}).`);
     say('  It starts at your next login. To start it now, run  cc-mission-control setup  again.');
