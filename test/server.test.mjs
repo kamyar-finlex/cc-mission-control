@@ -143,10 +143,23 @@ test('the page needs sign-in, and never contains the token', async () => {
   const pageRes = await request('/', { headers: { Cookie: cookie } });
   assert.equal(pageRes.status, 200);
   assert.ok(!pageRes.body.includes(token));
-  const nonce = pageRes.headers['content-security-policy'].match(/script-src 'nonce-([^']+)'/)[1];
-  assert.ok(pageRes.body.includes(`<script nonce="${nonce}">`));
+  assert.match(pageRes.headers['content-security-policy'], /script-src 'self'/);
+  assert.ok(!/<script>/.test(pageRes.body), 'no inline script');
+  assert.ok(pageRes.body.includes('<script type="module" src="/js/main.js"></script>'));
   assert.match(pageRes.headers['content-security-policy'], /frame-ancestors 'none'/);
   assert.equal(pageRes.headers['x-content-type-options'], 'nosniff');
+});
+
+test('the page\'s stylesheet and modules are served signed in, with the right types', async () => {
+  const css = await request('/app.css', { headers: { Cookie: cookie } });
+  assert.equal(css.status, 200);
+  assert.match(css.headers['content-type'], /^text\/css/);
+  const js = await request('/js/main.js', { headers: { Cookie: cookie } });
+  assert.equal(js.status, 200);
+  assert.match(js.headers['content-type'], /^text\/javascript/);
+  assert.equal((await request('/js/main.js')).status, 401);
+  assert.equal((await request('/js/nope.js', { headers: { Cookie: cookie } })).status, 404);
+  assert.equal((await request('/js/../server.mjs', { headers: { Cookie: cookie } })).status, 404);
 });
 
 test('data routes need sign-in', async () => {

@@ -93,6 +93,14 @@ export function sse(res) {
 }
 export const send = (res, event, data) => res.write(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`);
 
+// Changes whenever any page file does, so open pages reload themselves onto the new version.
+async function pageVersion() {
+  const dir = path.join(ROOT, 'public');
+  const files = ['index.html', 'app.css', ...(await fsp.readdir(path.join(dir, 'js'))).map((f) => `js/${f}`)];
+  const times = await Promise.all(files.map(async (f) => (await fsp.stat(path.join(dir, f))).mtimeMs));
+  return String(Math.max(...times));
+}
+
 let ticking = false;
 export async function tick() {
   if (ticking) return;
@@ -100,7 +108,7 @@ export async function tick() {
   try {
     const sessions = await buildState();
     const usage = { plan: await readPlanLimits() };
-    try { uiVersion = String((await fsp.stat(path.join(ROOT, 'public', 'index.html'))).mtimeMs); } catch { /* keep */ }
+    try { uiVersion = await pageVersion(); } catch { /* keep */ }
     const json = JSON.stringify({ sessions, usage, uiVersion });
     if (json !== stateJson) {
       stateJson = json;
