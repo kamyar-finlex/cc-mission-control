@@ -377,6 +377,17 @@ img.mdimg { display: block; margin: 6px 0; }
 .compose textarea { width: 100%; min-height: 64px; resize: vertical; border: 1px solid var(--line); border-radius: 8px; padding: 8px 10px; background: var(--panel-2); }
 .note { font-size: 13px; color: var(--muted); }
 .working-bar { font-size: 12px; color: var(--work); display: flex; align-items: center; gap: 8px; }
+/* Live avatar: a face that reads the open session's replies aloud (optional, all local) */
+#avatar { display: flex; gap: 14px; align-items: center; padding: 10px 18px; border-bottom: 1px solid var(--line); background: var(--panel-2); }
+#avatar[hidden] { display: none; }
+#av-canvas { width: 220px; aspect-ratio: 704 / 384; border-radius: 10px; background: #111; flex: none; }
+#drawer.max #av-canvas { width: 340px; }
+#av-side { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 6px; }
+#av-name { font-weight: 600; font-size: 14px; display: flex; align-items: baseline; gap: 8px; }
+#av-state { font-weight: 500; font-size: 12px; color: var(--muted); }
+#av-state.on { color: var(--accent); }
+#av-btns { display: flex; gap: 6px; flex-wrap: wrap; }
+#av-label { font-size: 11px; color: var(--muted); }
 
 dialog { border: 1px solid var(--line); border-radius: 12px; background: var(--panel); color: var(--text); width: min(560px, calc(100% - 32px)); padding: 18px; }
 dialog::backdrop { background: rgba(0,0,0,.35); }
@@ -426,6 +437,14 @@ kbd { font-family: var(--mono); font-size: 11px; border: 1px solid var(--line); 
     <div class="sub" id="d-sub"></div>
     <div id="d-linear"></div>
     <div id="d-mini"></div>
+  </div>
+  <div id="avatar" hidden>
+    <canvas id="av-canvas" width="704" height="384" aria-hidden="true"></canvas>
+    <div id="av-side">
+      <div id="av-name"><span id="av-who"></span><span id="av-state"></span></div>
+      <div id="av-btns"><button id="av-voice"></button><button id="av-last" title="Read the latest reply in this session aloud">▶ Read last reply</button><button id="av-stop" hidden>■ Stop</button></div>
+      <div id="av-label"></div>
+    </div>
   </div>
   <div id="feed"></div>
   <div class="compose" id="compose"></div>
@@ -1408,8 +1427,46 @@ function inline(t) {
     .replace(/\u0001(\d+)\u0001/g, (_, i) => `<img class="mdimg" src="${esc(pics[i][1])}" alt="${esc(pics[i][0] || 'image')}">`);
 }
 
+// HTML in a message (often entity-escaped, as GitHub and Linear bot comments arrive) becomes
+// Markdown before rendering, so it reads as text rather than as tags. Code is left alone.
+const ENTITIES = { lt: '<', gt: '>', amp: '&', quot: '"', apos: "'", nbsp: ' ' };
+const decodeEntities = (t) => t.replace(/&(#x[0-9a-f]+|#\d+|[a-z]+);/gi, (m, e) =>
+  e[0] === '#' ? String.fromCodePoint(parseInt(e.slice(1).replace(/^x/i, '0x'))) : ENTITIES[e.toLowerCase()] ?? m);
+const attr = (tag, name) => (tag.match(new RegExp(`\\b${name}\\s*=\\s*["']([^"']*)["']`, 'i')) || [])[1] || '';
+const BLOCK_TAGS = 'p|div|details|ul|ol|table|thead|tbody|tr|blockquote|section|article|center|dl';
+function htmlToMd(text) {
+  const codes = [];
+  let t = text.replace(/`[^`\n]+`/g, (c) => `\u0002${codes.push(c) - 1}\u0002`);
+  t = decodeEntities(t)
+    .replace(/<!--[\s\S]*?-->/g, '')
+    .replace(/<a\b([^>]*)>([\s\S]*?)<\/a>/gi, (_, a, label) => {
+      const href = attr(a, 'href'); label = label.replace(/<[^>]+>/g, '').trim();
+      return href ? `[${label || href}](${href})` : label;
+    })
+    .replace(/<img\b([^>]*)>/gi, (_, a) => attr(a, 'alt') || '')
+    .replace(/<br\s*\/?>/gi, '\n')
+    .replace(/<hr\s*\/?>/gi, '\n\n---\n\n')
+    .replace(/<(b|strong)>([\s\S]*?)<\/\1>/gi, '**$2**')
+    .replace(/<(i|em)>([\s\S]*?)<\/\1>/gi, '*$2*')
+    .replace(/<(s|del|strike)>([\s\S]*?)<\/\1>/gi, '~~$2~~')
+    .replace(/<code>([^<`\n]*)<\/code>/gi, '`$1`')
+    .replace(/<summary\b[^>]*>([\s\S]*?)<\/summary>/gi, (_, s) => `\n\n**${s.trim()}**\n\n`)
+    .replace(/<h([1-6])\b[^>]*>([\s\S]*?)<\/h\1>/gi, (_, n, h) => `\n\n${'#'.repeat(n)} ${h.trim()}\n\n`)
+    .replace(/<li\b[^>]*>/gi, '\n- ').replace(/<\/li>/gi, '')
+    .replace(/<\/?(dt|dd|td|th)\b[^>]*>/gi, ' ')
+    .replace(new RegExp(`</?(${BLOCK_TAGS})\\b[^>]*>`, 'gi'), '\n\n')
+    .replace(/<\/?(span|sub|sup|kbd|small|u|font)\b[^>]*>/gi, '')
+    .replace(/\n{3,}/g, '\n\n');
+  return t.replace(/\u0002(\d+)\u0002/g, (_, i) => codes[i]);
+}
 function md(src) {
-  const lines = String(src).replace(/\r/g, '').split('\n');
+  // Fenced code keeps its text exactly; everything else has its HTML turned into Markdown.
+  const parts = String(src).replace(/\r/g, '').split(/^(\s*(?:```+|~~~+)[^\n]*\n[\s\S]*?^\s*(?:```+|~~~+)\s*$)/m);
+  return mdBlocks(parts.map((p, i) => (i % 2 ? p : htmlToMd(p))).join(''));
+}
+
+function mdBlocks(src) {
+  const lines = String(src).split('\n');
   const out = [];
   let i = 0;
   const isTableSep = (l) => /^\s*\|?\s*:?-{2,}:?\s*(\|\s*:?-{2,}:?\s*)*\|?\s*$/.test(l || '');
@@ -1434,7 +1491,7 @@ function md(src) {
     if (/^\s*>/.test(l)) {
       const body = [];
       while (i < lines.length && /^\s*>/.test(lines[i])) body.push(lines[i++].replace(/^\s*>\s?/, ''));
-      out.push(`<blockquote>${md(body.join('\n'))}</blockquote>`); continue;
+      out.push(`<blockquote>${mdBlocks(body.join('\n'))}</blockquote>`); continue;
     }
     if (/^\s*([-*+]|\d+[.)])\s+/.test(l)) {
       const items = []; const ordered = /^\s*\d/.test(l); const base = l.match(/^\s*/)[0].length;
@@ -1446,7 +1503,7 @@ function md(src) {
         break;
       }
       const tag = ordered ? 'ol' : 'ul';
-      out.push(`<${tag}>${items.map(([first, ...rest]) => `<li>${inline(first)}${rest.length ? md(rest.join('\n')) : ''}</li>`).join('')}</${tag}>`);
+      out.push(`<${tag}>${items.map(([first, ...rest]) => `<li>${inline(first)}${rest.length ? mdBlocks(rest.join('\n')) : ''}</li>`).join('')}</${tag}>`);
       continue;
     }
     const para = [];
@@ -1519,9 +1576,193 @@ function appendEvents(events, initial) {
   for (const e of events) {
     if (e.kind === 'tool' || e.kind === 'result') addStep(feed, e);
     else { const h = evHtml(e); if (h) feed.insertAdjacentHTML('beforeend', h); }
+    if (e.kind === 'assistant' && e.text) { av.lastReply = e.text; if (!initial && av.on) avatarSay(e.text); }
   }
   if (nearBottom) feed.scrollTop = feed.scrollHeight;
 }
+
+// ---------- Live avatar (optional): reads the open session's new replies aloud, all on this Mac ----------
+// The face is a mouth bank built once, offline (avatar/bank_build.py): a head-motion loop plus, for each
+// loop frame, mouths of several openings. While speech plays, every frame shows the mouth whose opening
+// is closest to the sound's loudness at that moment. Speech is local Kokoro (avatar/tts_worker.py).
+const av = { man: null, on: store.get('avatarVoice', false), queue: [], gen: 0, busy: false, ctx: null, src: null, env: null, start: 0, pass: -1, drawn: -1, lastReply: '', loaded: false, t0: performance.now() };
+
+async function avatarInit() {
+  const r = await fetch('/api/avatar/manifest').catch(() => null);
+  if (!r?.ok) return;
+  av.man = await r.json();
+  $('av-who').textContent = av.man.name || 'Avatar';
+  $('av-label').textContent = av.man.label || '';
+  $('avatar').hidden = false;
+  avatarControls();
+}
+
+function avatarLoad() {
+  if (av.loaded || !av.man) return;
+  av.loaded = true;
+  const img = (src) => Object.assign(new Image(), { src });
+  av.base = Array.from({ length: av.man.frames }, (_, i) => img(`/api/avatar/base/${String(i).padStart(4, '0')}.jpg`));
+  av.sheets = Array.from({ length: av.man.passes }, (_, k) => img(`/api/avatar/pass${k}.jpg`));
+  av.ranked = av.man.open.flat().sort((x, y) => x - y);
+  const [cw, ch] = av.man.cell;
+  av.cell = Object.assign(document.createElement('canvas'), { width: cw, height: ch });
+  av.mask = Object.assign(document.createElement('canvas'), { width: cw, height: ch });
+  // A feathered edge, so the mouth cell melts into the frame around it.
+  const m = av.mask.getContext('2d'), a = m.createImageData(cw, ch), f = Math.max(4, Math.round(Math.min(cw, ch) * 0.16));
+  for (let y = 0; y < ch; y++) for (let x = 0; x < cw; x++) {
+    const k = Math.min(1, x / f, y / f, (cw - 1 - x) / f, (ch - 1 - y) / f);
+    a.data[(y * cw + x) * 4 + 3] = Math.round(255 * k * k * (3 - 2 * k));
+  }
+  m.putImageData(a, 0, 0);
+  requestAnimationFrame(avatarDraw);
+}
+
+function avatarTarget() {
+  if (!av.src || !av.env) return 0;
+  const e = av.env[Math.floor((av.ctx.currentTime - av.start + 0.04) * av.man.fps)] ?? 0;
+  return e < 0.12 ? 0 : Math.min(1, (e - 0.12) / 0.7);
+}
+
+function avatarDraw(now) {
+  requestAnimationFrame(avatarDraw);
+  if (!$('drawer').classList.contains('open')) return;
+  const m = av.man, n = m.frames;
+  const k = Math.floor((now - av.t0) / 1000 * m.fps) % (2 * n - 2);
+  const f = k < n ? k : 2 * n - 2 - k;          // the loop plays forward, then back
+  if (f === av.drawn) return;
+  const base = av.base[f];
+  if (!base.complete || !base.naturalWidth) return;
+  av.drawn = f;
+  const g = $('av-canvas').getContext('2d');
+  g.drawImage(base, 0, 0);
+  // While sound plays, always a talking mouth: loudness picks by rank among the bank's openings
+  // (the resting smile shows teeth, so measured openings do not start at zero).
+  const loud = avatarTarget();
+  let best = -1;
+  if (loud > 0) {
+    const want = av.ranked[Math.round(loud * (av.ranked.length - 1))];
+    const miss = (p) => (p < 0 ? Infinity : Math.abs(m.open[p][f] - want));
+    for (let p = 0; p < m.passes; p++) if (miss(p) < miss(best)) best = p;
+    if (av.pass !== best && miss(av.pass) < miss(best) + 0.08) best = av.pass;  // no flicker between near-equal mouths
+  }
+  av.pass = best;
+  const sheet = av.sheets[best];
+  if (best < 0 || !sheet.complete) return;
+  const [cw, ch] = m.cell, c = av.cell.getContext('2d');
+  c.globalCompositeOperation = 'copy';
+  c.drawImage(sheet, (f % m.cols) * cw, Math.floor(f / m.cols) * ch, cw, ch, 0, 0, cw, ch);
+  c.globalCompositeOperation = 'destination-in';
+  c.drawImage(av.mask, 0, 0);
+  g.drawImage(av.cell, m.pos[f][0], m.pos[f][1]);
+}
+
+// What is worth hearing in a reply: prose, not code, tables or URLs. Long replies are cut short.
+function speakable(text) {
+  let t = decodeEntities(String(text))
+    .replace(/```[\s\S]*?(```|$)/g, ' ')
+    .replace(/^\s*\|.*$/gm, ' ')
+    .replace(/<[^>]+>/g, ' ')
+    .replace(/!\[[^\]]*\]\([^)]*\)/g, ' ')
+    .replace(/\[([^\]]+)\]\([^)]*\)/g, '$1')
+    .replace(/https?:\/\/\S+/g, 'a link')
+    .replace(/`([^`]+)`/g, '$1')
+    .replace(/^\s*(#{1,6}|>|[-*+]|\d+[.)])\s+/gm, '')
+    .replace(/(\*\*|__|~~|\*|_)(\S[^*_~\n]*?)\1/g, '$2')
+    .replace(/\s+/g, ' ').trim();
+  if (t.length > 900) t = t.slice(0, Math.max(t.lastIndexOf('. ', 900), 400) + 1) + ' The rest is in the text.';
+  const chunks = [];
+  for (const s of t.split(/(?<=[.!?])\s+/)) {
+    // the first sentence alone, so the voice starts quickly; later ones in chunks of about 220 characters
+    if (chunks.length > 1 && (chunks.at(-1) + ' ' + s).length < 220) chunks[chunks.length - 1] += ' ' + s;
+    else if (s.trim()) chunks.push(s.trim());
+  }
+  return chunks;
+}
+
+function audioReady() {
+  av.ctx ??= new AudioContext();
+  return av.ctx.resume();
+}
+
+function envelope(buf) {
+  const d = buf.getChannelData(0), hop = Math.round(buf.sampleRate / av.man.fps), rms = [];
+  for (let i = 0; i < d.length; i += hop) {
+    let s = 0; const end = Math.min(d.length, i + hop);
+    for (let j = i; j < end; j++) s += d[j] * d[j];
+    rms.push(Math.sqrt(s / Math.max(1, end - i)));
+  }
+  const peak = [...rms].sort((x, y) => x - y)[Math.floor(rms.length * 0.95)] || 1;
+  return rms.map((v, i) => Math.min(1, ((rms[i - 1] ?? v) + 2 * v + (rms[i + 1] ?? v)) / 4 / peak));
+}
+
+function avatarFetch(item) {
+  item.audio ??= fetch('/api/avatar/speak', { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Console-Token': TOKEN }, body: JSON.stringify({ text: item.text }) })
+    .then((r) => (r.ok ? r.arrayBuffer() : r.text().then((m) => Promise.reject(new Error(m)))))
+    .then((b) => av.ctx.decodeAudioData(b));
+  return item.audio;
+}
+
+function avatarSay(text) {
+  const parts = speakable(text);
+  if (!parts.length || !av.man) return;
+  av.queue.push(...parts.map((t) => ({ text: t })));
+  avatarPump();
+}
+
+async function avatarPump() {
+  avatarState();
+  if (av.busy || !av.queue.length) return;
+  av.busy = true;
+  const gen = av.gen;
+  try {
+    await audioReady();
+    const buf = await avatarFetch(av.queue[0]);
+    if (av.queue[1]) avatarFetch(av.queue[1]).catch(() => {});   // the next part is voiced while this one plays
+    if (gen !== av.gen) return;
+    av.env = envelope(buf);
+    const src = av.ctx.createBufferSource();
+    src.buffer = buf; src.connect(av.ctx.destination);
+    av.src = src; av.start = av.ctx.currentTime + 0.03; src.start(av.start);
+    avatarState();
+    await new Promise((r) => { src.onended = r; });
+  } catch (e) {
+    if (gen === av.gen) toast(`${av.man.name || 'The avatar'} could not speak: ${e.message || e}`);
+  } finally {
+    if (gen === av.gen) { av.queue.shift(); av.src = null; av.env = null; av.busy = false; avatarPump(); }
+  }
+}
+
+function avatarStop() {
+  av.gen++; av.queue = [];
+  try { av.src?.stop(); } catch { /* already ended */ }
+  av.src = null; av.env = null; av.busy = false;
+  if (av.man) avatarState();
+}
+
+function avatarState() {
+  const speaking = av.busy || av.queue.length > 0;
+  $('av-state').textContent = speaking ? (av.src ? 'speaking' : 'getting ready…') : av.on ? 'listening for new replies' : '';
+  $('av-state').classList.toggle('on', speaking);
+  $('av-stop').hidden = !speaking;
+}
+
+function avatarControls() {
+  $('av-voice').textContent = `Voice: ${av.on ? 'on' : 'off'}`;
+  $('av-voice').title = av.on ? 'Stop reading new replies aloud' : 'Read new replies in this session aloud as they arrive';
+  avatarState();
+}
+
+$('av-voice').onclick = () => {
+  av.on = !av.on; store.set('avatarVoice', av.on);
+  if (av.on) { audioReady(); fetch('/api/avatar/warm', { method: 'POST', headers: { 'X-Console-Token': TOKEN } }).catch(() => {}); } else avatarStop();
+  avatarControls();
+};
+$('av-last').onclick = () => {
+  audioReady(); avatarStop();
+  if (av.lastReply) avatarSay(av.lastReply); else toast('No reply in this session yet.');
+};
+$('av-stop').onclick = avatarStop;
+avatarInit();
 
 // Click any picture to see it full size.
 document.addEventListener('click', (e) => {
@@ -1534,6 +1775,7 @@ function openSession(sid) {
   const s = sessions.find((x) => x.sessionId === sid);
   if (!s) return;
   selected = sid; markSeen(s);
+  avatarStop(); av.lastReply = ''; avatarLoad();
   $('compose').dataset.sig = '';
   renderHead(s); renderBoard();
   $('drawer').classList.add('open');
@@ -1549,7 +1791,7 @@ function openSession(sid) {
 }
 
 function closeDrawer() {
-  $('drawer').classList.remove('open'); stream?.close(); stream = null; selected = null; renderBoard();
+  $('drawer').classList.remove('open'); stream?.close(); stream = null; selected = null; avatarStop(); renderBoard();
 }
 $('d-close').onclick = closeDrawer;
 function toggleMax() { const on = $('drawer').classList.toggle('max'); store.set('maxDrawer', on); $('d-max').textContent = on ? '⤡' : '⤢'; $('d-max').title = on ? 'Restore (f)' : 'Maximize (f)'; }

@@ -11,6 +11,7 @@
     "check": "node --check server.mjs && node --check statusline.mjs && node --check bin/cli.mjs"
   },
   "files": [
+    "avatar/",
     "bin/",
     "public/",
     "skills/",

@@ -90,11 +90,22 @@ Once the package is published to npm, `npm install -g cc-mission-control` and `n
 **Session detail** (click a card)
 - The live transcript as a chat:
   - your messages as bubbles, with any images you sent
-  - Claude's replies rendered as Markdown
+  - Claude's replies rendered as Markdown; HTML in a message (such as a GitHub or Linear bot comment, often entity-escaped) is shown as formatted text, not tags
   - the tool calls between messages folded into one *N steps* row (with icons, results, and any screenshots kept visible)
   - click any image to see it full size
 - Linear and PR panels, each collapsible.
 - `f` maximizes the panel and `d` collapses the details.
+- An optional **talking avatar** that reads the session's replies aloud (see below).
+
+**Talking avatar** (optional, off until you build one)
+- A face above the transcript with **Voice: on/off**, **▶ Read last reply** and **■ Stop**. With Voice on, each new reply in the open session is read aloud as it arrives. Code blocks, tables and URLs are skipped, and long replies stop after about 900 characters.
+- Live, all on your machine: speech comes from [Kokoro-82M](https://huggingface.co/hexgrad/Kokoro-82M), kept loaded by `avatar/tts_worker.py`. The face is a *mouth bank* built once, offline: a head-motion loop plus, for every loop frame, mouths from several lip-synced passes. While speech plays, each frame shows the mouth whose opening matches the voice's loudness at that moment, so nothing is rendered live.
+- Building a bank (Apple Silicon works; each step's script explains itself):
+  1. a head-motion loop of the face with a closed mouth, e.g. a still portrait animated with [LivePortrait](https://github.com/KwaiVGI/LivePortrait), head pose and blinks only;
+  2. `avatar/bank_speech.py`: six speech tracks as long as the loop, in the avatar's Kokoro voice;
+  3. [MuseTalk](https://github.com/TMElyralab/MuseTalk) 1.5 over the loop, once per track;
+  4. `avatar/bank_build.py`: the loop frames, a mouth sprite sheet per pass and `manifest.json`, into `CCMC_AVATAR_DIR`.
+- Label the face honestly: the bank's `label` is shown under it. Use a fictional face, or your own with your consent, never someone else's.
 
 **Deployments** (in the detail panel)
 - Which repositories the session is shipping, at which version, and how far each got: *Waiting at the production gate*, *On beta*, *Tagged, not on beta yet*, *Ready, not tagged yet* or *In production*. The ones not yet in production come first.
@@ -132,7 +143,7 @@ Everything runs on your machine. The server is a single dependency-free Node fil
 | `~/.claude/projects/**/*.jsonl` | Transcripts: messages, tool calls, turn recaps, ticket and PR mentions |
 | `~/Library/Application Support/Claude/claude-code-sessions/**` | Claude desktop app sessions: their app id, archived flag and parent session (read-only, macOS) |
 
-It writes only to `~/.claude/cc-mission-control/`: its token, the archive list, saved stories and open-item checks, usage readings and images you paste into replies. `setup` also writes the `statusLine` entry in `~/.claude/settings.json`, the skill in `~/.claude/skills/`, and (macOS) its LaunchAgent.
+It writes only to `~/.claude/cc-mission-control/` (and, for the optional avatar, cached speech in the system temp folder): its token, the archive list, saved stories and open-item checks, usage readings and images you paste into replies. `setup` also writes the `statusLine` entry in `~/.claude/settings.json`, the skill in `~/.claude/skills/`, and (macOS) its LaunchAgent.
 
 It reaches outside your machine only when you have set that up:
 - `gh api graphql`, to read PR states
@@ -173,6 +184,8 @@ CC Mission Control reads plain text from your sessions, so some of its behaviour
 | `CLAUDE_BIN` | `claude` | The Claude Code CLI to call |
 | `RECENT_HOURS` | start of this month or week | How far back ended sessions are shown |
 | `CCMC_DATA_DIR` | `~/.claude/cc-mission-control` | Where it saves its own data |
+| `CCMC_AVATAR_DIR` | `~/.local/share/presenter-film/avatar/clara` | The talking avatar's bank (`manifest.json`, `base/`, `pass*.jpg`); no bank, no avatar |
+| `CCMC_KOKORO_PYTHON` | `~/.local/share/presenter-film/venvs/kokoro/bin/python` | A Python with `kokoro` installed, for the avatar's voice |
 
 ## Troubleshooting
 
