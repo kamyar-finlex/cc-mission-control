@@ -27,7 +27,9 @@ for line in sys.stdin:
     t = time.time()
     try:
         voice = req.get("voice") or "bf_emma"
-        pipe = pipes.setdefault(voice[0], KPipeline(lang_code=voice[0], repo_id="hexgrad/Kokoro-82M"))
+        if voice[0] not in pipes:      # loaded once per language, then kept
+            pipes[voice[0]] = KPipeline(lang_code=voice[0], repo_id="hexgrad/Kokoro-82M")
+        pipe = pipes[voice[0]]
         audio = np.concatenate([np.asarray(a) for _, _, a in pipe(req["text"], voice=voice)])
         tmp = req["out"] + ".tmp.wav"
         sf.write(tmp, np.clip(audio, -1, 1), 24000)

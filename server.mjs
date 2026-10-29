@@ -1210,21 +1210,32 @@ function ttsWorker() {
   const waiting = new Map();
   let buf = '';
   let ready;
-  tts = { child, waiting, next: 1, ready: new Promise((r) => { ready = r; }) };
+  const w = { child, waiting, next: 1, alive: true, ready: new Promise((r) => { ready = r; }) };
+  tts = w;
+  // A worker that never says it is ready (stuck import, model fetch) is killed, so requests fail instead of hanging.
+  const startup = setTimeout(() => child.kill(), 120000);
   child.stdout.on('data', (d) => {
     buf += d;
     let i;
     while ((i = buf.indexOf('\n')) >= 0) {
       const line = buf.slice(0, i); buf = buf.slice(i + 1);
       let msg; try { msg = JSON.parse(line); } catch { continue; }
-      if (msg.ready) ready();
+      if (msg.ready) { clearTimeout(startup); ready(); }
       waiting.get(msg.id)?.(msg); waiting.delete(msg.id);
     }
   });
-  const fail = () => { for (const r of waiting.values()) r({ ok: false, error: 'the voice stopped' }); tts = null; ready?.(); };
+  const fail = () => {
+    clearTimeout(startup);
+    w.alive = false;
+    for (const r of waiting.values()) r({ ok: false, error: 'the voice stopped' });
+    waiting.clear();
+    if (tts === w) tts = null;
+    ready();
+  };
   child.on('exit', fail);
   child.on('error', fail);
-  return tts;
+  child.stdin.on('error', () => { /* a dead worker's pipe: 'exit' reports it */ });
+  return w;
 }
 
 async function speakToFile(text, voice) {
@@ -1233,16 +1244,26 @@ async function speakToFile(text, voice) {
   if (fs.existsSync(out)) return { ok: true, out };
   const w = ttsWorker();
   await w.ready;
-  if (!tts) return { ok: false, error: 'the voice did not start' };
+  if (!w.alive) return { ok: false, error: 'the voice did not start' };
   const id = w.next++;
-  const reply = new Promise((r) => { w.waiting.set(id, r); setTimeout(() => { if (w.waiting.delete(id)) r({ ok: false, error: 'timed out' }); }, 60000); });
+  const reply = new Promise((r) => {
+    if (!w.alive) { r({ ok: false, error: 'the voice stopped' }); return; }
+    w.waiting.set(id, r);
+    setTimeout(() => { if (w.waiting.delete(id)) r({ ok: false, error: 'timed out' }); }, 60000);
+  });
   w.child.stdin.write(JSON.stringify({ id, text, voice, out }) + '\n');
   const r = await reply;
   return r.ok ? { ok: true, out } : r;
 }
 
 async function avatarManifest() {
-  try { return JSON.parse(await fsp.readFile(path.join(AVATAR_DIR, 'manifest.json'), 'utf8')); } catch { return null; }
+  try {
+    const file = path.join(AVATAR_DIR, 'manifest.json');
+    // `version` changes whenever the bank is rebuilt; the page puts it on every image URL, so cached
+    // images from an older bank are never paired with this manifest.
+    const [text, st] = await Promise.all([fsp.readFile(file, 'utf8'), fsp.stat(file)]);
+    return { ...JSON.parse(text), version: Math.round(st.mtimeMs) };
+  } catch { return null; }
 }
 
 const LOCAL_HOSTS = new Set([`127.0.0.1:${PORT}`, `localhost:${PORT}`]);

@@ -52,11 +52,15 @@ def openness(img, i):
 
 for i, f in enumerate(base):
     _, _, b = fa.get_landmarks_from_image(f[:, :, ::-1], return_bboxes=True)
-    boxes.append(b[0][:4] if b else boxes[-1])
-base_open = [openness(f, i) for i, f in enumerate(base)]
+    boxes.append(b[0][:4] if b else None)
+seen = [b for b in boxes if b is not None]
+if not seen:
+    raise SystemExit("no face found in any loop frame")
+for i in range(n):      # a frame without a detected face borrows the nearest earlier (or first) face box
+    boxes[i] = boxes[i] if boxes[i] is not None else (boxes[i - 1] if i else seen[0])
 pass_open = [[openness(p[i], i) for i in range(n)] for p in passes]
 scale = float(np.percentile(np.array(pass_open), 95)) or 1.0
-print(f"openness: loop median {np.median(base_open):.3f}, passes p95 {scale:.3f}")
+print(f"mouth openness, passes p95 {scale:.3f}")
 
 # Where the passes differ from the loop: one cell size for all frames, placed per frame.
 regions = []
@@ -71,6 +75,8 @@ for i in range(n):
     ys, xs = np.nonzero(d)
     regions.append((X1 + xs.min(), Y1 + ys.min(), X1 + xs.max(), Y1 + ys.max()) if len(xs) else None)
 found = [r for r in regions if r]
+if not found:
+    raise SystemExit("the passes never change the mouth: check MuseTalk's output in out/v15")
 cw = int(min(W, np.percentile([r[2] - r[0] for r in found], 98) + 2 * PAD))
 ch = int(min(H, np.percentile([r[3] - r[1] for r in found], 98) + 2 * PAD))
 pos, last = [], ((W - cw) // 2, (H - ch) // 2)
@@ -101,6 +107,5 @@ json.dump({
     "fps": fps, "frames": n, "width": W, "height": H, "cell": [cw, ch], "cols": COLS, "passes": len(passes),
     "pos": pos.tolist(),
     "open": [[round(min(1.0, v / scale), 3) for v in po] for po in pass_open],
-    "base_open": [round(min(1.0, v / scale), 3) for v in base_open],
 }, open(os.path.join(avatar, "manifest.json"), "w"))
 print("bank written to", avatar)
