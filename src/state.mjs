@@ -1,11 +1,12 @@
 import fsp from 'node:fs/promises';
 import path from 'node:path';
 import { loadJson, saveJson } from '../lib/store.mjs';
+import { bySessionOrder } from '../public/js/util.js'; // shared with the page, which sorts patched sessions the same way
 import { appIdToCli, appMeta } from './app-meta.mjs';
 import { DATA_DIR, ROOT, USAGE_TASK_ID } from './config.mjs';
-import { linearFor, linearScans } from './linear.mjs';
-import { checks, storyFor } from './llm.mjs';
-import { prsFor } from './prs.mjs';
+import { linearEpoch, linearFor, linearScans } from './linear.mjs';
+import { checks, storyFor, written } from './llm.mjs';
+import { prEpoch, prsFor } from './prs.mjs';
 import { aliveReason, deploysFor, openItemsFor } from './story.mjs';
 import { DISPLAY, clip, cwdForEnded, historyCutoff, parseLines, projectOf, readRegistry, readTail, refreshTranscript, scanTranscripts, summaryFor, transcripts } from './transcript.mjs';
 import { readPlanLimits } from './usage.mjs';
@@ -14,7 +15,6 @@ import { readPlanLimits } from './usage.mjs';
 
 export let state = { sessions: [], at: 0 };
 let uiVersion = '';
-let stateJson = '';
 
 // Sessions hidden from the console. App sessions can only be archived inside the app.
 const ARCHIVE_FILE = path.join(DATA_DIR, 'archive.json');
@@ -55,8 +55,44 @@ async function buildState() {
   }
   // This tool's own usage-refresh runs are plumbing, not work to watch.
   for (let i = sessions.length - 1; i >= 0; i--) if (appMeta.get(sessions[i].sessionId)?.scheduledTaskId === USAGE_TASK_ID) sessions.splice(i, 1);
-  sessions.sort((a, b) => (b.lastTs || 0) - (a.lastTs || 0));
-  for (const s of sessions) {
+  sessions.sort(bySessionOrder);
+  cardIds.clear();
+  for (let i = 0; i < sessions.length; i++) {
+    const s = sessions[i];
+    // An ended session's card only changes when one of its inputs does; reuse it otherwise.
+    const key = s.phase === 'ended' ? cardKey(s) : undefined;
+    const hit = key && cards.get(s.sessionId);
+    if (hit && hit.key === key) {
+      if (VERIFY_CACHE) { const fresh = JSON.stringify(enrich(s)); if (fresh !== hit.json) console.error(`card cache stale for ${s.sessionId}`); }
+      sessions[i] = hit.card;
+      cardJson.set(hit.card, hit.json);
+      continue;
+    }
+    enrich(s);
+    if (key) { const json = JSON.stringify(s); cards.set(s.sessionId, { key, card: s, json }); cardJson.set(s, json); }
+  }
+  for (const id of cards.keys()) if (!cardIds.has(id)) cards.delete(id);
+  return sessions;
+}
+
+// Everything an ended session's card is built from. Running sessions are always rebuilt.
+const cards = new Map(); // sessionId -> { key, card, json }
+const cardIds = new Set();
+export const cardJson = new WeakMap(); // card -> its JSON, for diff()
+const VERIFY_CACHE = process.env.CCMC_VERIFY_CACHE === '1'; // rebuild every cached card and report any difference
+const ids = new WeakMap();
+let nextId = 0;
+const idOf = (o) => (o ? ids.get(o) ?? (ids.set(o, ++nextId), nextId) : 0);
+function cardKey(s) {
+  cardIds.add(s.sessionId);
+  const t = transcripts.get(s.sessionId);
+  const m = appMeta.get(s.sessionId);
+  return [t?.size, t?.mtime, s.cwd, idOf(m), m && appIdToCli.get(m.parentAppId), consoleArchive.has(s.sessionId),
+    linearScans.get(s.sessionId)?.offset, linearEpoch, prEpoch, idOf(written[s.sessionId]), idOf(checks[s.sessionId])].join('|');
+}
+
+function enrich(s) {
+  {
     const m = appMeta.get(s.sessionId);
     if (m) {
       s.appId = m.appId;
@@ -81,7 +117,7 @@ async function buildState() {
         : { ...aliveReason(s, s.openItems), more: Math.max(0, s.openItems.length - 1) };
     }
   }
-  return sessions;
+  return s;
 }
 
 // ---------- live push (SSE) ----------
@@ -105,6 +141,29 @@ async function pageVersion() {
   return String(Math.max(...times));
 }
 
+// What the pages have: each session's JSON, and the usage and page version they last got.
+let sentSessions = new Map();
+let sentUsage = '';
+let sentVersion = '';
+function diff(sessions, usage) {
+  const now = new Map();
+  const upsert = [];
+  for (const s of sessions) {
+    const j = cardJson.get(s) ?? JSON.stringify(s);
+    now.set(s.sessionId, j);
+    if (sentSessions.get(s.sessionId) !== j) upsert.push(s);
+  }
+  const remove = [...sentSessions.keys()].filter((id) => !now.has(id));
+  const usageJson = JSON.stringify(usage);
+  const patch = {};
+  if (upsert.length) patch.upsert = upsert;
+  if (remove.length) patch.remove = remove;
+  if (usageJson !== sentUsage) patch.usage = usage;
+  if (uiVersion !== sentVersion) patch.uiVersion = uiVersion;
+  sentSessions = now; sentUsage = usageJson; sentVersion = uiVersion;
+  return Object.keys(patch).length ? patch : null;
+}
+
 let ticking = false;
 export async function tick() {
   if (ticking) return;
@@ -113,11 +172,11 @@ export async function tick() {
     const sessions = await buildState();
     const usage = { plan: await readPlanLimits() };
     try { uiVersion = await pageVersion(); } catch { /* keep */ }
-    const json = JSON.stringify({ sessions, usage, uiVersion });
-    if (json !== stateJson) {
-      stateJson = json;
+    // Pages get the whole state once (on connect), then only what changed.
+    const patch = diff(sessions, usage);
+    if (patch) {
       state = { sessions, usage, uiVersion, at: Date.now() };
-      for (const c of clients) send(c, 'state', state);
+      for (const c of clients) send(c, 'patch', patch);
     }
   } catch (e) { console.error('tick failed', e); }
   finally { ticking = false; }

@@ -13,7 +13,7 @@ import { clip } from './transcript.mjs';
 
 const SUMMARY_FILE = path.join(DATA_DIR, 'stories.json');
 const isObj = (v) => v && typeof v === 'object' && !Array.isArray(v);
-let written = loadJson(SUMMARY_FILE, {});
+export let written = loadJson(SUMMARY_FILE, {});
 if (!isObj(written)) written = {};
 
 export function storyFor(sid, s) {

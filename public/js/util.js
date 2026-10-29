@@ -1,4 +1,8 @@
-// Small pure helpers: escaping and formatting. No DOM, so tests can import them.
+// Small pure helpers: escaping and formatting. No DOM, so tests and the server can import them.
+
+// Newest activity first, ties by id. The server sorts the board with this too, so a page that
+// applies patches keeps exactly the order a fresh load would have.
+export const bySessionOrder = (a, b) => (b.lastTs || 0) - (a.lastTs || 0) || (a.sessionId < b.sessionId ? -1 : a.sessionId > b.sessionId ? 1 : 0);
 
 export const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 // A value used as a CSS class: only letters, digits, _ and -, whatever the server or an API sent.

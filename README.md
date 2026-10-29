@@ -193,6 +193,7 @@ CC Mission Control reads plain text from your sessions, so some of its behaviour
 | `CCMC_DATA_DIR` | `~/.claude/cc-mission-control` | Where it saves its own data |
 | `CCMC_AVATAR_DIR` | `~/.local/share/presenter-film/avatar/clara` | The talking avatar's bank (`manifest.json`, `base/`, `pass*.jpg`); no bank, no avatar |
 | `CCMC_KOKORO_PYTHON` | `~/.local/share/presenter-film/venvs/kokoro/bin/python` | A Python with `kokoro` installed, for the avatar's voice |
+| `CCMC_VERIFY_CACHE` | off | Debugging: set to `1` to rebuild every cached card each second and log `card cache stale` if one differs |
 
 ## Troubleshooting
 
