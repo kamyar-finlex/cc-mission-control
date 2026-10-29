@@ -2,13 +2,10 @@ import { renderBoard } from './board.js';
 import { $, prevPhase, toast, ui } from './core.js';
 import { markSeen, openSession, renderHead } from './drawer.js';
 import { renderStory } from './story.js';
-import { ago, esc } from './util.js';
+import { ago, bySessionOrder, esc } from './util.js';
 import { renderWhy } from './why.js';
 
 // The live connection: board state over SSE, and reloading when a newer page is deployed.
-
-// Newest activity first, ties by id: the same order the server sends (src/state.mjs bySessionOrder).
-const bySessionOrder = (a, b) => (b.lastTs || 0) - (a.lastTs || 0) || (a.sessionId < b.sessionId ? -1 : a.sessionId > b.sessionId ? 1 : 0);
 
 function onState(list) {
   for (const s of list) {

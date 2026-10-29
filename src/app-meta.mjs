@@ -20,16 +20,19 @@ export const appFiles = new Map(); // app session id -> its metadata file
 // is a full check.
 const FULL_SCAN_MS = 60e3;
 const changed = new Set();
+let watcher = null;
 let watching = false;
 let lastFull = 0;
 
 function watchAppDir() {
+  watcher?.close(); // a failed watcher is replaced, never left open
   try {
-    fs.watch(APP_SESSIONS_DIR, { recursive: true }, (_event, f) => {
+    watcher = fs.watch(APP_SESSIONS_DIR, { recursive: true }, (_event, f) => {
       if (f && /(^|[\\/])local_[^\\/]*\.json$/.test(f)) changed.add(path.join(APP_SESSIONS_DIR, f));
-    }).on('error', () => { watching = false; });
+    });
+    watcher.on('error', () => { watching = false; });
     watching = true;
-  } catch { watching = false; }
+  } catch { watcher = null; watching = false; }
 }
 
 async function listAppFiles() {

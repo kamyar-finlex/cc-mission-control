@@ -1,6 +1,7 @@
 import fsp from 'node:fs/promises';
 import path from 'node:path';
 import { loadJson, saveJson } from '../lib/store.mjs';
+import { bySessionOrder } from '../public/js/util.js'; // shared with the page, which sorts patched sessions the same way
 import { appIdToCli, appMeta } from './app-meta.mjs';
 import { DATA_DIR, ROOT, USAGE_TASK_ID } from './config.mjs';
 import { linearEpoch, linearFor, linearScans } from './linear.mjs';
@@ -14,9 +15,6 @@ import { readPlanLimits } from './usage.mjs';
 
 export let state = { sessions: [], at: 0 };
 let uiVersion = '';
-
-// Newest activity first; the page sorts patched sessions with the same rule, so ties need a fixed order.
-export const bySessionOrder = (a, b) => (b.lastTs || 0) - (a.lastTs || 0) || (a.sessionId < b.sessionId ? -1 : a.sessionId > b.sessionId ? 1 : 0);
 
 // Sessions hidden from the console. App sessions can only be archived inside the app.
 const ARCHIVE_FILE = path.join(DATA_DIR, 'archive.json');
