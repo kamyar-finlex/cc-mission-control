@@ -1,0 +1,16 @@
+# Python packages for the optional talking avatar. Install into a virtual environment, for example:
+#   python3 -m venv ~/.local/share/presenter-film/venvs/kokoro
+#   ~/.local/share/presenter-film/venvs/kokoro/bin/pip install -r avatar/requirements.txt
+# then point CCMC_KOKORO_PYTHON at that environment's python if it lives elsewhere.
+#
+# These are minimum versions for the APIs the scripts use, not pinned, tested versions.
+
+# Voice (tts_worker.py, run by the server; and bank_speech.py)
+kokoro>=0.9.4            # KPipeline
+soundfile>=0.12
+espeakng-loader>=0.2     # bank_speech.py; tts_worker.py uses it when present
+
+# Building a mouth bank (bank_build.py), done once, offline
+numpy>=1.24
+opencv-python>=4.8
+face-alignment>=1.4      # LandmarksType.TWO_D

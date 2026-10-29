@@ -104,6 +104,7 @@ Once the package is published to npm, `npm install -g cc-mission-control` and `n
 **Talking avatar** (optional, off until you build one)
 - A face above the transcript with **Voice: on/off**, **▶ Read last reply** and **■ Stop**. With Voice on, each new reply in the open session is read aloud as it arrives. Code blocks, tables and URLs are skipped, and long replies stop after about 900 characters.
 - Live, all on your machine: speech comes from [Kokoro-82M](https://huggingface.co/hexgrad/Kokoro-82M), kept loaded by `avatar/tts_worker.py`. The face is a *mouth bank* built once, offline: a head-motion loop plus, for every loop frame, mouths from several lip-synced passes. While speech plays, each frame shows the mouth whose opening matches the voice's loudness at that moment, so nothing is rendered live.
+- Python packages for the voice and the bank: `avatar/requirements.txt` (minimum versions; install into a virtual environment and point `CCMC_KOKORO_PYTHON` at it).
 - Building a bank (Apple Silicon works; each step's script explains itself):
   1. a head-motion loop of the face with a closed mouth, e.g. a still portrait animated with [LivePortrait](https://github.com/KwaiVGI/LivePortrait), head pose and blinks only;
   2. `avatar/bank_speech.py`: six speech tracks as long as the loop, in the avatar's Kokoro voice;
@@ -147,7 +148,7 @@ Everything runs on your machine. The server is a single dependency-free Node fil
 | `~/.claude/projects/**/*.jsonl` | Transcripts: messages, tool calls, turn recaps, ticket and PR mentions |
 | `~/Library/Application Support/Claude/claude-code-sessions/**` | Claude desktop app sessions: their app id, archived flag and parent session (read-only, macOS) |
 
-It writes only to `~/.claude/cc-mission-control/` (owner-only; and, for the optional avatar, cached speech in the system temp folder): its token, the archive list, saved stories and open-item checks, usage readings and images you paste into replies. `setup` also writes the `statusLine` entry in `~/.claude/settings.json`, the skill in `~/.claude/skills/`, and (macOS) its LaunchAgent.
+It writes only to `~/.claude/cc-mission-control/` (owner-only; and, for the optional avatar, cached speech in the system temp folder): its token, the archive list, saved stories and open-item checks, usage readings and images you paste into replies. `setup` also writes the `statusLine` entry in `~/.claude/settings.json` (keeping a backup next to it, `settings.json.bak-cc-mission-control`), the skill in `~/.claude/skills/`, and (macOS) its LaunchAgent, which logs to `~/Library/Logs/cc-mission-control.log`. The log is trimmed to its last 1 MB whenever it passes 5 MB.
 
 It reaches outside your machine only when you have set that up:
 - `gh api graphql`, to read PR states
@@ -199,7 +200,7 @@ CC Mission Control reads plain text from your sessions, so some of its behaviour
 
 | You see | Do this |
 |---|---|
-| `Port 7777 is already in use` | It's already running: run `cc-mission-control open`. Or start it on another port with `--port 7788`. |
+| `Port 7777 is already in use` | It's already running: run `cc-mission-control open`. Or start it on another port with `--port 7788`. If the always-on service found the port taken, it stopped instead of retrying; once the port is free, run `cc-mission-control setup` to start it again. |
 | The page asks you to sign in | Run `cc-mission-control open` (add `--port` if you use another port). Each browser signs in once. |
 | The board stays empty | Start a session in the Claude app's Code tab or with `claude`. The dashboard reads `~/.claude/sessions` and `~/.claude/projects`, so it needs Claude Code to have run as the same macOS user. |
 | No PR chips | Run `gh auth status`. The dashboard needs a logged-in `gh`. |
@@ -217,7 +218,7 @@ cc-mission-control uninstall
 npm uninstall -g cc-mission-control
 ```
 
-`uninstall` removes the always-on service and tells you what else you may want to delete: the status line entry, the skill, `~/.claude/cc-mission-control/`, and the usage task in the Claude app.
+`uninstall` removes what `setup` added: the always-on service, its status line entry and the `/project-updates` skill (each only if it is still exactly what `setup` wrote, so a status line or skill you changed stays), its log and its speech cache. Your saved data in `~/.claude/cc-mission-control/` (archive list, stories, token, pasted images) and the settings backup stay; `cc-mission-control uninstall --purge` deletes the saved data too. Delete the usage task from the Claude app's Scheduled page yourself.
 
 ## Contributing
 

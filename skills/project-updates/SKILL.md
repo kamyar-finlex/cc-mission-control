@@ -10,10 +10,10 @@ Turn a day of Claude Code sessions into one short update per Linear project. Not
 ## 1. Get the digest
 
 ```bash
-curl -s -f -H 'Host: localhost:7777' -H "X-Console-Token: $(cat "${CCMC_DATA_DIR:-$HOME/.claude/cc-mission-control}/token")" 'http://127.0.0.1:7777/api/digest?range=today'
+P="${CCMC_PORT:-7777}"; curl -s -f -H "Host: localhost:$P" -H "X-Console-Token: $(cat "${CCMC_DATA_DIR:-$HOME/.claude/cc-mission-control}/token")" "http://127.0.0.1:$P/api/digest?range=today"
 ```
 
-The console only answers requests that carry its token, which this command reads from the console's owner-only token file. Never print, echo or repeat the token.
+If the user runs the console on another port, set `CCMC_PORT` to it first. The console only answers requests that carry its token, which this command reads from the console's owner-only token file. Never print, echo or repeat the token.
 
 Use `range=yesterday` or `range=week` if the user asked for that. If the request fails, CC Mission Control isn't running or the token file is missing. Tell the user to start it with `cc-mission-control` (or `cc-mission-control setup` for the always-on service), then stop.
 

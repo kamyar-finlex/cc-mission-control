@@ -15,14 +15,14 @@ import { fileURLToPath } from 'node:url';
 import { parseArgs, USAGE } from '../lib/cli-args.mjs';
 import { dataDir, ensureDataDir, writeFileAtomicSync } from '../lib/store.mjs';
 import { loadOrCreateToken } from '../lib/auth.mjs';
-import { planStatusLine } from '../lib/settings.mjs';
-import { reloadAgent, launchctl } from '../lib/launchd.mjs';
+import { planRemoveStatusLine, planStatusLine } from '../lib/settings.mjs';
+import { reloadAgent, launchctl, plistXml } from '../lib/launchd.mjs';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const SERVER = path.join(ROOT, 'server.mjs');
 const STATUSLINE = path.join(ROOT, 'statusline.mjs');
 const HOME = os.homedir();
-const LABEL = 'com.cc-mission-control';
+const LABEL = process.env.CCMC_LAUNCHD_LABEL || 'com.cc-mission-control'; // overridable so tests never touch the real service
 const PLIST = path.join(HOME, 'Library', 'LaunchAgents', `${LABEL}.plist`);
 const LOG = path.join(HOME, 'Library', 'Logs', 'cc-mission-control.log');
 const SETTINGS = path.join(HOME, '.claude', 'settings.json');
@@ -87,30 +87,7 @@ async function open() {
 
 function plist() {
   const pathVar = [path.dirname(process.execPath), path.join(HOME, '.local', 'bin'), '/opt/homebrew/bin', '/usr/local/bin', '/usr/bin', '/bin', '/usr/sbin', '/sbin'].join(':');
-  const x = (s) => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
-  return `<?xml version="1.0" encoding="UTF-8"?>
-<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
-<plist version="1.0">
-<dict>
-  <key>Label</key><string>${LABEL}</string>
-  <key>ProgramArguments</key>
-  <array><string>${x(process.execPath)}</string><string>${x(SERVER)}</string></array>
-  <key>WorkingDirectory</key><string>${x(ROOT)}</string>
-  <key>EnvironmentVariables</key>
-  <dict>
-    <key>PATH</key><string>${x(pathVar)}</string>
-    <key>HOME</key><string>${x(HOME)}</string>
-    <key>PORT</key><string>${x(port)}</string>${process.env.CCMC_DATA_DIR ? `
-    <key>CCMC_DATA_DIR</key><string>${x(process.env.CCMC_DATA_DIR)}</string>` : ''}
-  </dict>
-  <key>RunAtLoad</key><true/>
-  <key>KeepAlive</key><true/>
-  <key>ThrottleInterval</key><integer>5</integer>
-  <key>StandardOutPath</key><string>${x(LOG)}</string>
-  <key>StandardErrorPath</key><string>${x(LOG)}</string>
-</dict>
-</plist>
-`;
+  return plistXml({ label: LABEL, node: process.execPath, server: SERVER, root: ROOT, port, home: HOME, log: LOG, pathVar, dataDir: process.env.CCMC_DATA_DIR });
 }
 
 function installService() {
@@ -211,16 +188,45 @@ function setup() {
   say(`\nDone. Open it with:  cc-mission-control open${port === 7777 ? '' : ` --port ${port}`}`);
 }
 
+// Removes what setup added, but only what is still exactly what setup wrote: a status line or a
+// skill the user changed stays. Saved data stays too unless --purge is given.
 function uninstall() {
-  if (isMac && fs.existsSync(PLIST)) {
-    launchctl(['bootout', `gui/${process.getuid()}/${LABEL}`]); // fails harmlessly when it is already stopped
-    fs.rmSync(PLIST);
-    say('• Always-on service removed.');
-  } else say('• No always-on service installed.');
-  say('• Status line: remove "statusLine" from ~/.claude/settings.json if you no longer want it (a backup from setup may sit next to it).');
-  say(`• Skill: delete ${SKILL_DEST} if you no longer want /project-updates.`);
-  say(`• Saved data (archive list, stories, usage) is in ${DATA_DIR}; delete it if you like.`);
-  say('• If you created the usage task in the Claude app, delete it from the app\'s Scheduled page.');
+  const removed = [];
+  const kept = [];
+  if (isMac) {
+    const loaded = launchctl(['print', `gui/${process.getuid()}/${LABEL}`]).ok;
+    const hadPlist = fs.existsSync(PLIST);
+    if (loaded) launchctl(['bootout', `gui/${process.getuid()}/${LABEL}`]);
+    if (hadPlist) fs.rmSync(PLIST);
+    if (loaded || hadPlist) removed.push('the always-on service');
+  }
+
+  let raw = null;
+  try { raw = fs.readFileSync(SETTINGS, 'utf8'); } catch { /* none */ }
+  const plan = planRemoveStatusLine(raw);
+  if (plan.action === 'remove') { writeFileAtomicSync(SETTINGS, plan.next, fs.statSync(SETTINGS).mode & 0o777); removed.push('its status line in ~/.claude/settings.json'); }
+  else if (plan.action === 'foreign') kept.push('your own status line in ~/.claude/settings.json');
+  else if (plan.action === 'invalid') kept.push(`~/.claude/settings.json, untouched: it isn't valid JSON (${plan.error})`);
+  if (fs.existsSync(`${SETTINGS}.bak-cc-mission-control`)) kept.push(`the settings backup setup made: ${SETTINGS}.bak-cc-mission-control`);
+
+  const skill = path.join(SKILL_DEST, 'SKILL.md');
+  let installed = null;
+  try { installed = fs.readFileSync(skill, 'utf8'); } catch { /* not installed */ }
+  if (installed !== null && installed === fs.readFileSync(path.join(SKILL_SRC, 'SKILL.md'), 'utf8')) { fs.rmSync(SKILL_DEST, { recursive: true, force: true }); removed.push('the /project-updates skill'); }
+  else if (installed !== null) kept.push(`the /project-updates skill, which you changed: ${SKILL_DEST}`);
+
+  for (const [file, what] of [[LOG, 'its log'], [path.join(os.tmpdir(), 'cc-mission-control-tts'), 'its speech cache']]) {
+    if (fs.existsSync(file)) { fs.rmSync(file, { recursive: true, force: true }); removed.push(what); }
+  }
+  if (fs.existsSync(DATA_DIR)) {
+    if (flag('purge')) { fs.rmSync(DATA_DIR, { recursive: true, force: true }); removed.push(`its saved data (${DATA_DIR})`); }
+    else kept.push(`its saved data (archive list, stories, token, pasted images) in ${DATA_DIR}; run  cc-mission-control uninstall --purge  to delete it`);
+  }
+
+  say(removed.length ? `Removed: ${removed.join(', ')}.` : 'Nothing to remove.');
+  for (const k of kept) say(`Kept: ${k}.`);
+  say("If you created the usage task in the Claude app, delete it from the app's Scheduled page.");
+  say('Then remove the command itself with:  npm uninstall -g cc-mission-control');
 }
 
 if (flag('help')) { say(USAGE); process.exit(0); }

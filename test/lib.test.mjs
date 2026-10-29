@@ -5,9 +5,10 @@ import os from 'node:os';
 import path from 'node:path';
 import { dispatchArgs, continueArgs } from '../lib/claude-args.mjs';
 import { tokenMatches, readCookie, isAuthed, mayAct, cookieName, sessionCookie, loadOrCreateToken } from '../lib/auth.mjs';
-import { planStatusLine } from '../lib/settings.mjs';
+import { planStatusLine, planRemoveStatusLine } from '../lib/settings.mjs';
 import { parseArgs } from '../lib/cli-args.mjs';
-import { loadJson, writeFileAtomicSync, ensureDataDir } from '../lib/store.mjs';
+import { loadJson, writeFileAtomicSync, ensureDataDir, trimLog } from '../lib/store.mjs';
+import { plistXml } from '../lib/launchd.mjs';
 import { forEachLimit } from '../lib/limit.mjs';
 
 const TOKEN = 'a'.repeat(32);
@@ -139,4 +140,37 @@ test('forEachLimit: every item, never more than the limit at once', async () => 
   assert.equal(peak, 4);
   assert.deepEqual(seen.sort((a, b) => a - b), [...Array(25).keys()]);
   await forEachLimit([], 8, () => { throw new Error('never called'); });
+});
+
+test('the service restarts only after a crash, logs to its log, and escapes every value', () => {
+  const xml = plistXml({ label: 'com.x', node: '/n/node', server: '/a&b/server.mjs', root: '/a&b', port: 7777, home: '/h', log: '/h/l.log', pathVar: '/bin', dataDir: '/d<1>' });
+  assert.match(xml, /<key>KeepAlive<\/key><dict><key>SuccessfulExit<\/key><false\/><\/dict>/);
+  assert.match(xml, /<key>CCMC_LOG<\/key><string>\/h\/l\.log<\/string>/);
+  assert.match(xml, /\/a&amp;b\/server\.mjs/);
+  assert.match(xml, /<key>CCMC_DATA_DIR<\/key><string>\/d&lt;1&gt;<\/string>/);
+  assert.doesNotMatch(plistXml({ label: 'x', node: 'n', server: 's', root: 'r', port: 1, home: 'h', log: 'l', pathVar: 'p' }), /CCMC_DATA_DIR/);
+});
+
+test('trimLog keeps the last part of a big log, from a line start', () => {
+  const file = path.join(tmp(), 'service.log');
+  const lines = Array.from({ length: 2000 }, (_, i) => `line ${String(i).padStart(4, '0')} ${'x'.repeat(40)}`).join('\n') + '\n';
+  fs.writeFileSync(file, lines);
+  assert.equal(trimLog(file, 1e9, 1000), false, 'small enough: untouched');
+  assert.equal(trimLog(file, 10000, 5000), true);
+  const kept = fs.readFileSync(file, 'utf8');
+  assert.ok(kept.length < 5200);
+  assert.match(kept, /^\[log trimmed at .*\]\nline \d{4} x+\n/);
+  assert.match(kept, /line 1999 x+\n$/);
+  assert.equal(trimLog(path.join(tmp(), 'missing.log')), false);
+});
+
+test('uninstall takes out only the status line setup wrote', () => {
+  const ours = '"/n/node" "/x/statusline.mjs"';
+  const r = planRemoveStatusLine(JSON.stringify({ env: { A: '1' }, statusLine: { type: 'command', command: ours } }));
+  assert.equal(r.action, 'remove');
+  assert.deepEqual(JSON.parse(r.next), { env: { A: '1' } });
+  assert.equal(planRemoveStatusLine(JSON.stringify({ statusLine: { command: `bash a.sh | ${ours}` } })).action, 'foreign');
+  assert.equal(planRemoveStatusLine(JSON.stringify({ env: {} })).action, 'none');
+  assert.equal(planRemoveStatusLine(null).action, 'none');
+  assert.equal(planRemoveStatusLine('{ broken').action, 'invalid');
 });
