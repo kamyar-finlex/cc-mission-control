@@ -6,7 +6,7 @@ import { isAuthed, mayAct, sessionCookie, tokenMatches } from '../lib/auth.mjs';
 import { act } from './actions.mjs';
 import { attachmentPath, saveAttachment } from './attachments.mjs';
 import { AVATAR_DIR, avatarManifest, speakToFile, ttsWorker } from './avatar.mjs';
-import { ROOT, IMAGE_TYPES, PORT, TOKEN } from './config.mjs';
+import { IMAGE_TYPES, PORT, ROOT, TOKEN } from './config.mjs';
 import { digest } from './digest.mjs';
 import { clients, send, sse, state, streamSession, tick } from './state.mjs';
 import { images } from './transcript.mjs';

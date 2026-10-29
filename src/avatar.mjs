@@ -6,7 +6,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { ROOT } from './config.mjs';
 
-// Avatar (optional).
+// The optional talking avatar: a local text-to-speech worker and the face's mouth bank.
 // A talking face that reads replies aloud, all local: a mouth bank built once by avatar/bank_build.py
 // and Kokoro speech from avatar/tts_worker.py. Off unless the bank exists.
 

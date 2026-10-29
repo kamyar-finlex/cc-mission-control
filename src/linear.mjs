@@ -2,7 +2,7 @@ import fs from 'node:fs';
 import { state } from './state.mjs';
 import { clip, resultText, stripReminders, transcripts } from './transcript.mjs';
 
-// Linear.
+// Linear tickets and projects, learned from the Linear tool replies already in transcripts.
 // No Linear API calls: tickets are learned from what sessions already fetched
 // through the Linear MCP (get_issue / save_issue / list_issues results).
 

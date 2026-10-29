@@ -1,7 +1,7 @@
 import { linearScans } from './linear.mjs';
 import { state } from './state.mjs';
 
-// Daily digest for project updates.
+// The daily digest the project-updates skill reads.
 // Everything the project-updates skill needs for one day, grouped by Linear project.
 // Sessions with no Linear project are listed apart and left out of the updates.
 

@@ -2,7 +2,7 @@ import fsp from 'node:fs/promises';
 import path from 'node:path';
 import { APP_DIR, DATA_DIR } from './config.mjs';
 
-// Usage.
+// Plan limits for the usage toolbar, from whichever source has the newest reading.
 
 // Written by statusline.mjs whenever a terminal Claude Code session redraws its status line.
 const USAGE_FILE = path.join(DATA_DIR, 'usage-statusline.json');
