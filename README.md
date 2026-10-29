@@ -178,8 +178,8 @@ CC Mission Control reads plain text from your sessions, so some of its behaviour
 | **Pull requests live on GitHub**, read with the `gh` CLI. | PR chips and states | `src/linear.mjs`: `PR_URL`; `src/prs.mjs`: `prTick()` |
 | **Releases go through beta (or staging), then a production gate.** The stages are recognised from English wording such as "on beta", "waits at the production gate" or "live in production". | The *Deployments* box | `src/story.mjs`: `deployStage()`, `DEPLOY_LABEL` |
 | **Unfinished work is spotted from English phrases** such as "blocked", "not yet", "still to do" or "waiting on". | The *why it's still alive* line and *Still open* lists | `src/story.mjs`: `OPEN_CUE`, `aliveReason()` |
-| **Deploys are done by the session's agent**, which is asked to report risks and wait for your yes. | The 🚀 *Deploy* request text | `public/index.html`: `deployPrompt` |
-| **Nudge replies are general English sentences.** | *Carry on with what is open* and *What is left, and who owns it?* | `public/index.html`: `GENERIC_REPLIES` |
+| **Deploys are done by the session's agent**, which is asked to report risks and wait for your yes. | The 🚀 *Deploy* request text | `public/js/deploy.js`: `deployPrompt` |
+| **Nudge replies are general English sentences.** | *Carry on with what is open* and *What is left, and who owns it?* | `public/js/why.js`: `GENERIC_REPLIES` |
 | **The Claude desktop app's internals:** its `claude://claude.ai/epitaxy/…` links, its session metadata under `~/Library/Application Support/Claude`, its scheduled tasks and its `get_usage` tool. None of these are a public API. | Opening sessions in the app, the session tree, archived flags, usage limits | `src/config.mjs`: `APP_DIR`, `USAGE_TASK_ID`; `src/app-meta.mjs`: `scanAppMeta()` |
 | **Project updates are posted to Linear** with the Linear MCP `save_status_update` tool, in a short Progress / Next / Needs-attention shape. | The `project-updates` skill | `skills/project-updates/SKILL.md` |
 
@@ -220,7 +220,7 @@ npm uninstall -g cc-mission-control
 
 ## Contributing
 
-Issues and pull requests are welcome. The server starts in `server.mjs` and does its work in `src/`, one module per concern: `transcript` (reading transcripts), `linear`, `prs`, `story` (reading a session without a model), `llm` (what Claude writes about one), `state` (building the board and pushing it to pages), `actions`, `http`, and the macOS pieces `app-meta` and `send-to-app`. The page is `public/index.html`; the CLI is `bin/cli.mjs`, with small helpers in `lib/`; `statusline.mjs` feeds plan limits. Please keep it dependency-free, and run `npm run check` and `npm test` before you open a pull request.
+Issues and pull requests are welcome. The server starts in `server.mjs` and does its work in `src/`, one module per concern: `transcript` (reading transcripts), `linear`, `prs`, `story` (reading a session without a model), `llm` (what Claude writes about one), `state` (building the board and pushing it to pages), `actions`, `http`, and the macOS pieces `app-meta` and `send-to-app`. The page is `public/index.html` with its style in `public/app.css` and its script in `public/js/` as native ES modules (no build step), loaded by `main.js`; `markdown.js` and `util.js` need no DOM, so tests import them directly. The CLI is `bin/cli.mjs`, with small helpers in `lib/`; `statusline.mjs` feeds plan limits. Please keep it dependency-free, and run `npm run check` and `npm test` before you open a pull request.
 
 ## License
 

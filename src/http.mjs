@@ -1,4 +1,3 @@
-import crypto from 'node:crypto';
 import fsp from 'node:fs/promises';
 import http from 'node:http';
 import path from 'node:path';
@@ -15,9 +14,9 @@ import { images } from './transcript.mjs';
 
 const LOCAL_HOSTS = new Set([`127.0.0.1:${PORT}`, `localhost:${PORT}`]);
 
-// The page's one inline script runs under a per-request nonce; nothing else may run.
-const csp = (nonce) => [
-  "default-src 'self'", `script-src 'nonce-${nonce}'`, "style-src 'self' 'unsafe-inline'",
+// The page runs only its own script files; no inline script, nothing from elsewhere.
+const CSP = [
+  "default-src 'self'", "script-src 'self'", "style-src 'self' 'unsafe-inline'",
   "img-src 'self' data: blob:", "media-src 'self' blob:", "connect-src 'self'", "font-src 'self' data:",
   "object-src 'none'", "base-uri 'none'", "form-action 'self'", "frame-ancestors 'none'",
 ].join('; ');
@@ -80,13 +79,21 @@ async function handle(req, res) {
       return;
     }
     if (!authed) { res.writeHead(401, { 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'no-store' }).end(SIGN_IN_PAGE); return; }
-    const nonce = crypto.randomBytes(16).toString('base64');
-    const html = (await fsp.readFile(path.join(ROOT, 'public', 'index.html'), 'utf8')).replace('<script>', `<script nonce="${nonce}">`);
-    res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'no-store', 'Content-Security-Policy': csp(nonce) }).end(html);
+    const html = await fsp.readFile(path.join(ROOT, 'public', 'index.html'), 'utf8');
+    res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'no-store', 'Content-Security-Policy': CSP }).end(html);
     return;
   }
   if (!authed) { res.writeHead(401, { 'Content-Type': 'text/plain' }).end('sign in first: run cc-mission-control open'); return; }
 
+  // The page's own stylesheet and script modules.
+  const asset = p === '/app.css' ? 'app.css' : p.match(/^\/js\/([a-z-]+\.js)$/)?.[1] && `js/${p.slice(4)}`;
+  if (req.method === 'GET' && asset) {
+    try {
+      const body = await fsp.readFile(path.join(ROOT, 'public', asset));
+      res.writeHead(200, { 'Content-Type': asset.endsWith('.css') ? 'text/css; charset=utf-8' : 'text/javascript; charset=utf-8', 'Cache-Control': 'no-store' }).end(body);
+    } catch { res.writeHead(404).end('not found'); }
+    return;
+  }
   if (req.method === 'GET' && p === '/events') {
     sse(res); send(res, 'state', state); clients.add(res);
     req.on('close', () => clients.delete(res));

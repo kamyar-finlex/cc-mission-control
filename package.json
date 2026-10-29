@@ -8,7 +8,7 @@
   },
   "scripts": {
     "start": "node bin/cli.mjs",
-    "check": "for f in server.mjs statusline.mjs bin/cli.mjs lib/*.mjs src/*.mjs test/*.mjs; do node --check \"$f\" || exit 1; done && node test/check-page.mjs",
+    "check": "for f in server.mjs statusline.mjs bin/cli.mjs lib/*.mjs src/*.mjs public/js/*.js test/*.mjs; do node --check \"$f\" || exit 1; done && node test/check-page.mjs",
     "test": "node --test test/*.test.mjs"
   },
   "files": [
