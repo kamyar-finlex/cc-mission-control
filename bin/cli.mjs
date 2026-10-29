@@ -10,12 +10,13 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import http from 'node:http';
-import { spawn, execFileSync } from 'node:child_process';
+import { spawn } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { parseArgs, USAGE } from '../lib/cli-args.mjs';
 import { dataDir, ensureDataDir, writeFileAtomicSync } from '../lib/store.mjs';
 import { loadOrCreateToken } from '../lib/auth.mjs';
 import { planStatusLine } from '../lib/settings.mjs';
+import { reloadAgent, launchctl } from '../lib/launchd.mjs';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const SERVER = path.join(ROOT, 'server.mjs');
@@ -120,14 +121,14 @@ function installService() {
     return;
   }
   fs.mkdirSync(path.dirname(PLIST), { recursive: true });
-  const uid = process.getuid();
-  try { execFileSync('launchctl', ['bootout', `gui/${uid}/${LABEL}`], { stdio: 'ignore' }); } catch { /* not loaded yet */ }
-  fs.writeFileSync(PLIST, plist());
-  try {
-    execFileSync('launchctl', ['bootstrap', `gui/${uid}`, PLIST], { stdio: ['ignore', 'ignore', 'pipe'] });
-  } catch (e) {
-    say(`• Always-on service: written to ${PLIST}, but launchctl could not start it (${String(e.stderr || e.message).trim()}).`);
-    say('  It starts at your next login. To start it now, run  cc-mission-control setup  again in a moment.');
+  const r = reloadAgent({ uid: process.getuid(), label: LABEL, plist: PLIST, writePlist: () => fs.writeFileSync(PLIST, plist()) });
+  if (!r.ok && !r.written) {
+    say(`• Always-on service: not changed, because ${r.error}. Run  cc-mission-control setup  again in a moment.`);
+    return;
+  }
+  if (!r.ok) {
+    say(`• Always-on service: written to ${PLIST}, but launchctl could not start it (${r.error}).`);
+    say('  It starts at your next login. To start it now, run  cc-mission-control setup  again.');
     return;
   }
   say(`• Always-on service: installed. It starts at login, restarts if it dies, and serves http://localhost:${port}`);
@@ -212,7 +213,7 @@ function setup() {
 
 function uninstall() {
   if (isMac && fs.existsSync(PLIST)) {
-    try { execFileSync('launchctl', ['bootout', `gui/${process.getuid()}/${LABEL}`], { stdio: 'ignore' }); } catch { /* already stopped */ }
+    launchctl(['bootout', `gui/${process.getuid()}/${LABEL}`]); // fails harmlessly when it is already stopped
     fs.rmSync(PLIST);
     say('• Always-on service removed.');
   } else say('• No always-on service installed.');
