@@ -1313,11 +1313,18 @@ async function readJson(req, limit) {
   throw new HttpError(400, 'Expected a JSON object.');
 }
 
+function drainBounded(req, limit = 16e6) {
+  let seen = 0;
+  req.on('data', (c) => { seen += c.length; if (seen > limit) req.destroy(); });
+  req.resume();
+}
+
 const json = (res, value, status = 200) => res.writeHead(status, { 'Content-Type': 'application/json; charset=utf-8', 'Cache-Control': 'no-store' }).end(JSON.stringify(value));
 
 async function handle(req, res) {
   // Refuse DNS-rebinding and cross-site requests: this server can start agents.
   if (!LOCAL_HOSTS.has(req.headers.host || '')) { res.writeHead(403).end('forbidden host'); return; }
+  res.setHeader('X-Console', 'cc-mission-control'); // lets `cc-mission-control open` tell the console from other servers
   res.setHeader('X-Content-Type-Options', 'nosniff');
   res.setHeader('Referrer-Policy', 'no-referrer');
   res.setHeader('X-Frame-Options', 'DENY');
@@ -1350,11 +1357,8 @@ async function handle(req, res) {
   const m = p.match(/^\/api\/sessions\/([0-9a-f-]{36})\/stream$/);
   if (req.method === 'GET' && m) { streamSession(req, res, m[1]); return; }
 
-  if (req.method === 'GET' && p === '/api/digest') {
-    res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8', 'Cache-Control': 'no-store' })
-      .end(JSON.stringify(digest(url.searchParams.get('range') || 'today'), null, 2));
-    return;
-  }
+  if (req.method === 'GET' && p === '/api/whoami') { res.writeHead(204).end(); return; }
+  if (req.method === 'GET' && p === '/api/digest') { json(res, digest(url.searchParams.get('range') || 'today')); return; }
   const img = p.match(/^\/api\/images\/([0-9a-f]{20})$/);
   if (req.method === 'GET' && img) {
     const im = images.get(img[1]);
@@ -1374,7 +1378,7 @@ async function handle(req, res) {
   if (req.method === 'GET' && p === '/api/avatar/manifest') {
     const man = await avatarManifest();
     if (!man) { res.writeHead(404).end('no avatar bank'); return; }
-    res.writeHead(200, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' }).end(JSON.stringify(man));
+    json(res, man);
     return;
   }
   const av = p.match(/^\/api\/avatar\/((?:base\/\d{4})|(?:pass\d{1,2}))\.jpg$/);
@@ -1403,7 +1407,7 @@ async function handle(req, res) {
   }
   if (p === '/api/attach') {
     let body;
-    try { body = await readJson(req, 15e6); } catch (e) { if (e.status === 413) { req.resume(); res.setHeader('Connection', 'close'); json(res, { ok: false, out: 'Images up to 10 MB only.' }); return; } throw e; }
+    try { body = await readJson(req, 15e6); } catch (e) { if (e.status === 413) { drainBounded(req); res.setHeader('Connection', 'close'); json(res, { ok: false, out: 'Images up to 10 MB only.' }); return; } throw e; }
     json(res, await saveAttachment(body.dataUrl));
     return;
   }
@@ -1417,9 +1421,9 @@ const server = http.createServer((req, res) => {
     if (!(e instanceof HttpError)) console.error(`${req.method} ${String(req.url).slice(0, 200)} failed:`, e);
     if (res.headersSent) { res.destroy(); return; }
     const status = e instanceof HttpError ? e.status : 500;
-    // Whatever is left of the request body is read and dropped, so the client gets this reply
-    // instead of a reset connection; the connection is then closed.
-    req.resume();
+    // Up to 16 MB more of the request body is read and dropped, so the client gets this reply
+    // instead of a reset connection; past that the socket is cut. The connection then closes.
+    drainBounded(req);
     res.writeHead(status, { 'Content-Type': 'text/plain', Connection: 'close' }).end(e instanceof HttpError ? e.message : 'internal error');
   });
 });

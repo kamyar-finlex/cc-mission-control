@@ -121,6 +121,7 @@ test('a malformed request line gets 400 and the server keeps running', async () 
 
 test('only the console host names are served', async () => {
   assert.equal((await request('/', { host: 'evil.example' })).status, 403);
+  assert.equal((await request('/')).headers['x-console'], 'cc-mission-control', 'cc-mission-control open looks for this');
 });
 
 test('the page needs sign-in, and never contains the token', async () => {
@@ -149,7 +150,8 @@ test('the page needs sign-in, and never contains the token', async () => {
 });
 
 test('data routes need sign-in', async () => {
-  for (const p of ['/events', '/api/digest', `/api/sessions/${SID}/stream`, '/api/images/0123456789abcdef0123', '/api/attachments/x.png', '/api/avatar/manifest']) {
+  assert.equal((await request('/api/whoami', { headers: { Cookie: cookie } })).status, 204);
+  for (const p of ['/api/whoami', '/events', '/api/digest', `/api/sessions/${SID}/stream`, '/api/images/0123456789abcdef0123', '/api/attachments/x.png', '/api/avatar/manifest']) {
     assert.equal((await request(p, { headOnly: true })).status, 401, p);
   }
   const digest = await request('/api/digest', { headers: { 'X-Console-Token': token } });

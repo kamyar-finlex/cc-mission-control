@@ -79,6 +79,9 @@ test('status line: never rewrites a file it cannot parse, keeps everything else'
   assert.equal(planStatusLine(JSON.stringify({ statusLine: { type: 'command', command: `bash ~/s.sh | ${cmd}` } }), cmd).action, 'foreign');
   assert.equal(planStatusLine(JSON.stringify({ statusLine: { type: 'command', command: cmd } }), cmd).action, 'current');
 
+  const odd = '"/Users/a \\"b\\"/node" "/x/\\$y/statusline.mjs"';
+  assert.equal(planStatusLine(JSON.stringify({ statusLine: { type: 'command', command: odd } }), cmd).action, 'update', 'escaped paths are still ours');
+
   const moved = planStatusLine(JSON.stringify({ statusLine: { type: 'command', command: '"/old/node" "/x/statusline.mjs"', padding: 1 } }), cmd);
   assert.equal(moved.action, 'update');
   assert.deepEqual(JSON.parse(moved.next).statusLine, { type: 'command', command: cmd, padding: 1 });
@@ -117,4 +120,9 @@ test('JSON stores: a broken file is moved aside, never silently overwritten', ()
   assert.deepEqual(loadJson(file, {}), { b: 2 });
   assert.deepEqual(fs.readdirSync(dir).filter((f) => f.endsWith('.tmp')), []);
   assert.equal(fs.statSync(ensureDataDir(path.join(dir, 'd'))).mode & 0o777, 0o700);
+  const shared = path.join(dir, 'shared');
+  fs.mkdirSync(shared, { mode: 0o755 });
+  fs.chmodSync(shared, 0o755);
+  ensureDataDir(shared);
+  assert.equal(fs.statSync(shared).mode & 0o777, 0o755, 'an existing folder keeps its permissions');
 });

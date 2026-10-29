@@ -58,16 +58,26 @@ function start() {
   child.on('exit', (code) => process.exit(code ?? 0));
 }
 
-// Is the console answering on this port?
-const isRunning = () => new Promise((resolve) => {
-  const req = http.get({ host: '127.0.0.1', port, path: '/', headers: { Host: `localhost:${port}` }, timeout: 2000 }, (res) => { res.resume(); resolve(true); });
-  req.on('error', () => resolve(false));
-  req.on('timeout', () => { req.destroy(); resolve(false); });
+// What answers on this port: 'console', 'other' (some other server, or an older console), or 'none'.
+// The token only ever goes to a server that identifies itself as the console.
+const probe = () => new Promise((resolve) => {
+  const req = http.get({ host: '127.0.0.1', port, path: '/', headers: { Host: `localhost:${port}` }, timeout: 2000 }, (res) => {
+    res.resume();
+    resolve(res.headers['x-console'] === 'cc-mission-control' ? 'console' : 'other');
+  });
+  req.on('error', () => resolve('none'));
+  req.on('timeout', () => { req.destroy(); resolve('none'); });
 });
 
 async function open() {
-  if (!(await isRunning())) {
+  const found = await probe();
+  if (found === 'none') {
     say(`CC Mission Control isn't running on port ${port}. Start it with  cc-mission-control${port === 7777 ? '' : ` --port ${port}`}  (or  cc-mission-control setup  for the always-on service).`);
+    process.exit(1);
+  }
+  if (found === 'other') {
+    say(`Something on port ${port} isn't this version of CC Mission Control, so the sign-in link wasn't opened.`);
+    say(`If it's an older CC Mission Control, restart it (for the always-on service: cc-mission-control setup).`);
     process.exit(1);
   }
   openBrowser(signInUrl());
@@ -144,7 +154,9 @@ function installStatusLine() {
   try { now = fs.readFileSync(SETTINGS, 'utf8'); } catch { /* still missing */ }
   if (now !== raw) { say('• Status line: skipped. settings.json changed while setup was running; run setup again.'); return; }
   fs.mkdirSync(path.dirname(SETTINGS), { recursive: true });
-  if (raw !== null) fs.copyFileSync(SETTINGS, `${SETTINGS}.bak-cc-mission-control`);
+  // The backup holds settings from before CC Mission Control's first change; a later re-pin keeps it.
+  const backup = `${SETTINGS}.bak-cc-mission-control`;
+  if (raw !== null && !(plan.action === 'update' && fs.existsSync(backup))) fs.copyFileSync(SETTINGS, backup);
   writeFileAtomicSync(SETTINGS, plan.next, raw === null ? 0o600 : fs.statSync(SETTINGS).mode & 0o777);
   say(plan.action === 'update'
     ? '• Status line: updated to this copy and this Node.js (backup next to settings.json).'
