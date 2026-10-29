@@ -11,6 +11,9 @@ import os from 'node:os';
 import crypto from 'node:crypto';
 import { spawn, execFile } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
+import { dataDir, ensureDataDir, loadJson, saveJson } from './lib/store.mjs';
+import { loadOrCreateToken, isAuthed, mayAct, tokenMatches, sessionCookie } from './lib/auth.mjs';
+import { dispatchArgs, continueArgs } from './lib/claude-args.mjs';
 
 const PORT = Number(process.env.PORT) || 7777;
 const HOST = '127.0.0.1';
@@ -18,22 +21,17 @@ const CLAUDE_DIR = path.join(os.homedir(), '.claude');
 const SESS_DIR = path.join(CLAUDE_DIR, 'sessions');
 const PROJ_DIR = path.join(CLAUDE_DIR, 'projects');
 // Everything this tool writes lives here.
-const DATA_DIR = process.env.CCMC_DATA_DIR || path.join(CLAUDE_DIR, 'cc-mission-control');
-fs.mkdirSync(DATA_DIR, { recursive: true });
+const DATA_DIR = ensureDataDir(dataDir());
 const USAGE_TASK_ID = 'cc-mission-control-usage';
 const APP_DIR = path.join(os.homedir(), 'Library', 'Application Support', 'Claude');
 const CLAUDE_BIN = process.env.CLAUDE_BIN || 'claude';
 const RECENT_HOURS = Number(process.env.RECENT_HOURS) || 0;
 const TAIL_BYTES = 768 * 1024;
-// Kept across restarts (owner-only file), so open pages keep working after the server restarts.
-const TOKEN = (() => {
-  const file = path.join(DATA_DIR, 'token');
-  try { const t = fs.readFileSync(file, 'utf8').trim(); if (/^[0-9a-f]{32}$/.test(t)) return t; } catch { /* first run */ }
-  const t = crypto.randomBytes(16).toString('hex');
-  try { fs.writeFileSync(file, t, { mode: 0o600 }); } catch { /* falls back to a per-run token */ }
-  return t;
-})();
+// Kept across restarts (owner-only file), so a signed-in browser stays signed in.
+const TOKEN = loadOrCreateToken(DATA_DIR);
 const HERE = path.dirname(fileURLToPath(import.meta.url));
+// The only image types the console serves; anything else could be rendered as a page on this origin.
+const IMAGE_TYPES = { 'image/png': 'png', 'image/jpeg': 'jpg', 'image/gif': 'gif', 'image/webp': 'webp' };
 
 // ---------- transcript parsing ----------
 
@@ -61,9 +59,11 @@ function resultText(content) {
 const images = new Map(); // hash -> { type, data (base64) }
 function keepImage(src) {
   if (src?.type !== 'base64' || typeof src.data !== 'string') return undefined;
+  const type = src.media_type || 'image/png';
+  if (!IMAGE_TYPES[type]) return undefined;
   const h = crypto.createHash('sha1').update(src.data).digest('hex').slice(0, 20);
   if (!images.has(h)) {
-    images.set(h, { type: src.media_type || 'image/png', data: src.data });
+    images.set(h, { type, data: src.data });
     if (images.size > 150) images.delete(images.keys().next().value);
   }
   return h;
@@ -443,8 +443,9 @@ async function prTick() {
 // ---------- session story ----------
 
 const SUMMARY_FILE = path.join(DATA_DIR, 'stories.json');
-let written = {};
-try { written = JSON.parse(fs.readFileSync(SUMMARY_FILE, 'utf8')); } catch { /* none yet */ }
+const isObj = (v) => v && typeof v === 'object' && !Array.isArray(v);
+let written = loadJson(SUMMARY_FILE, {});
+if (!isObj(written)) written = {};
 const firstSentence = (t) => (t.match(/^[\s\S]*?[.!?](?=\s|$)/)?.[0] || t).trim();
 
 function storyFor(sid, s) {
@@ -529,7 +530,7 @@ async function writeSummary(sid) {
     const r = await runHaiku(prompt);
     if (!r.ok) return r;
     written[sid] = { text: r.text, at: Date.now(), turns: st.story.recaps.length, model: 'haiku' };
-    await fsp.writeFile(SUMMARY_FILE, JSON.stringify(written));
+    await saveJson(SUMMARY_FILE, written);
     return { ok: true, out: 'Summary written.' };
   } finally { writing.delete(sid); }
 }
@@ -630,8 +631,8 @@ function deploysFor(st) {
 }
 
 const CHECK_FILE = path.join(DATA_DIR, 'open-items.json');
-let checks = {};
-try { checks = JSON.parse(fs.readFileSync(CHECK_FILE, 'utf8')); } catch { /* none yet */ }
+let checks = loadJson(CHECK_FILE, {});
+if (!isObj(checks)) checks = {};
 const checking = new Set();
 
 // Claude reads the whole digest and lists what is still open, each with a reply the user could send.
@@ -649,7 +650,7 @@ Answer with JSON only, no prose and no code fence: {"done": boolean (true only i
     let parsed;
     try { parsed = JSON.parse(r.text.slice(r.text.indexOf('{'), r.text.lastIndexOf('}') + 1)); } catch { return { ok: false, out: 'Claude did not answer in the expected format. Try again.' }; }
     checks[sid] = { done: !!parsed.done, items: (parsed.items || []).slice(0, 6).map((i) => ({ text: String(i.text || ''), who: i.who, reply: i.reply ? String(i.reply) : undefined })), at: Date.now(), turns: st.story.recaps.length };
-    await fsp.writeFile(CHECK_FILE, JSON.stringify(checks));
+    await saveJson(CHECK_FILE, checks);
     return { ok: true, out: 'Checked.' };
   } finally { checking.delete(sid); }
 }
@@ -755,9 +756,9 @@ async function scanAppMeta() {
 
 // Sessions hidden from the console. App sessions can only be archived inside the app.
 const ARCHIVE_FILE = path.join(DATA_DIR, 'archive.json');
-let consoleArchive = new Set();
-try { consoleArchive = new Set(JSON.parse(fs.readFileSync(ARCHIVE_FILE, 'utf8'))); } catch { /* none yet */ }
-const saveArchive = () => fsp.writeFile(ARCHIVE_FILE, JSON.stringify([...consoleArchive]));
+const archived = loadJson(ARCHIVE_FILE, []);
+const consoleArchive = new Set(Array.isArray(archived) ? archived.filter((x) => typeof x === 'string') : []);
+const saveArchive = () => saveJson(ARCHIVE_FILE, [...consoleArchive]);
 
 async function buildState() {
   const reg = await readRegistry();
@@ -911,9 +912,18 @@ function openTerminal(cwd, command) {
 
 const find = (sid) => state.sessions.find((s) => s.sessionId === sid);
 
+// Actions that act on one session; each refuses to run without it.
+const SESSION_ACTIONS = new Set(['send-app', 'archive', 'check-open', 'summarize', 'unarchive', 'terminal', 'stop', 'remove', 'continue']);
+// Ids go on command lines, so only plain ids pass (transcript file names are UUIDs, job ids are short hex).
+const SAFE_ID = /^[\w][\w-]{0,99}$/;
+
 async function act(name, body) {
-  const s = body.sessionId ? find(body.sessionId) : undefined;
-  if (body.sessionId && !s) return { ok: false, out: 'Session not found (it may have been cleaned up).' };
+  if (!body || typeof body !== 'object' || Array.isArray(body)) body = {};
+  const s = body.sessionId ? find(String(body.sessionId)) : undefined;
+  if ((body.sessionId || SESSION_ACTIONS.has(name)) && !s) return { ok: false, out: 'Session not found (it may have been cleaned up).' };
+  if (s && !SAFE_ID.test(s.sessionId)) return { ok: false, out: 'This session has an unusual id, so the console will not pass it to a command.' };
+  const needsJob = s?.kind === 'background' && ['archive', 'terminal', 'stop', 'remove'].includes(name);
+  if (needsJob && !SAFE_ID.test(String(s.jobId || ''))) return { ok: false, out: 'This background agent has no usable job id.' };
   switch (name) {
     case 'refresh-usage': {
       // Nothing outside the app can run its scheduled task, so a stale reading opens
@@ -954,9 +964,9 @@ async function act(name, body) {
       await saveArchive();
       return { ok: true, out: 'Back on the board.' };
     case 'terminal':
-      if (s.kind === 'background' && s.running) return openTerminal(s.cwd, `${CLAUDE_BIN} attach ${s.jobId}`);
+      if (s.kind === 'background' && s.running) return openTerminal(s.cwd, `${sh(CLAUDE_BIN)} attach ${sh(s.jobId)}`);
       if (s.running) return { ok: false, out: 'This session is already open elsewhere. Resuming it here would start a copy.' };
-      return openTerminal(s.cwd, `${CLAUDE_BIN} --resume ${s.sessionId}`);
+      return openTerminal(s.cwd, `${sh(CLAUDE_BIN)} --resume ${sh(s.sessionId)}`);
     case 'stop':
       if (s.kind !== 'background') return { ok: false, out: 'Only background agents can be stopped from here.' };
       return run(CLAUDE_BIN, ['stop', s.jobId]);
@@ -967,7 +977,8 @@ async function act(name, body) {
       const text = String(body.text || '').trim();
       if (!text) return { ok: false, out: 'Write a message first.' };
       if (s.running) return { ok: false, out: 'This session is running. Attach to it (background) or use the Claude app.' };
-      return run(CLAUDE_BIN, ['--bg', '--resume', s.sessionId, text], { cwd: s.cwd });
+      if (!s.cwd || !fs.existsSync(s.cwd)) return { ok: false, out: `Its folder no longer exists: ${s.cwd || '(unknown)'}` };
+      return run(CLAUDE_BIN, continueArgs(s.sessionId, text), { cwd: s.cwd });
     }
     case 'project-updates': {
       // A new Claude app session with the skill's command typed in; Claude writes, you confirm, then it posts.
@@ -992,11 +1003,9 @@ async function act(name, body) {
       const prompt = String(body.prompt || '').trim();
       const cwd = String(body.cwd || '').trim();
       if (!prompt || !cwd) return { ok: false, out: 'Folder and prompt are required.' };
-      if (!fs.existsSync(cwd)) return { ok: false, out: `No such folder: ${cwd}` };
-      const args = ['--bg'];
-      if (body.model) args.push('--model', String(body.model));
-      if (body.permissionMode) args.push('--permission-mode', String(body.permissionMode));
-      args.push(prompt);
+      if (!path.isAbsolute(cwd) || !fs.existsSync(cwd)) return { ok: false, out: `No such folder: ${cwd}` };
+      const { args, error } = dispatchArgs({ model: body.model, permissionMode: body.permissionMode, prompt });
+      if (error) return { ok: false, out: error };
       return run(CLAUDE_BIN, args, { cwd });
     }
     default:
@@ -1008,8 +1017,8 @@ async function act(name, body) {
 
 // Images pasted or dropped into the editor, saved where Claude Code can open them by path.
 const ATTACH_DIR = path.join(DATA_DIR, 'attachments');
-const IMAGE_TYPES = { 'image/png': 'png', 'image/jpeg': 'jpg', 'image/gif': 'gif', 'image/webp': 'webp' };
-const attachmentPath = (name) => (/^[\w.-]+$/.test(name) ? path.join(ATTACH_DIR, name) : undefined);
+// A plain file name inside ATTACH_DIR: no separators, and never "." or "..".
+const attachmentPath = (name) => (typeof name === 'string' && /^[\w-][\w.-]{0,99}$/.test(name) ? path.join(ATTACH_DIR, name) : undefined);
 async function saveAttachment(dataUrl) {
   const m = /^data:(image\/(?:png|jpeg|gif|webp));base64,([A-Za-z0-9+/=]+)$/.exec(dataUrl || '');
   if (!m) return { ok: false, out: 'Only PNG, JPEG, GIF or WebP images can be attached.' };
@@ -1268,17 +1277,71 @@ async function avatarManifest() {
 
 const LOCAL_HOSTS = new Set([`127.0.0.1:${PORT}`, `localhost:${PORT}`]);
 
-const server = http.createServer(async (req, res) => {
+// The page's one inline script runs under a per-request nonce; nothing else may run.
+const csp = (nonce) => [
+  "default-src 'self'", `script-src 'nonce-${nonce}'`, "style-src 'self' 'unsafe-inline'",
+  "img-src 'self' data: blob:", "media-src 'self' blob:", "connect-src 'self'", "font-src 'self' data:",
+  "object-src 'none'", "base-uri 'none'", "form-action 'self'", "frame-ancestors 'none'",
+].join('; ');
+
+const SIGN_IN_PAGE = `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>CC Mission Control</title><style>body{font:15px/1.5 system-ui,sans-serif;max-width:34rem;margin:15vh auto;padding:0 16px;color:#222;background:#f4f3ef}
+code{background:#e8e6df;padding:2px 6px;border-radius:4px}@media (prefers-color-scheme:dark){body{background:#1c1b19;color:#e8e6df}code{background:#33312c}}</style></head>
+<body><h1>CC Mission Control</h1><p>This browser isn't signed in to the console yet. In a terminal, run:</p><p><code>cc-mission-control open</code></p>
+<p>It opens this page with a one-time link that signs this browser in. The console shows every Claude Code transcript on this Mac and can start agents, so it only answers browsers that have signed in this way.</p></body></html>`;
+
+class HttpError extends Error { constructor(status, msg) { super(msg); this.status = status; } }
+
+async function readBody(req, limit) {
+  const chunks = [];
+  let size = 0;
+  for await (const chunk of req) {
+    size += chunk.length;
+    if (size > limit) throw new HttpError(413, 'Request too large.');
+    chunks.push(chunk);
+  }
+  return Buffer.concat(chunks).toString('utf8');
+}
+
+async function readJson(req, limit) {
+  const raw = await readBody(req, limit);
+  if (!raw) return {};
+  try {
+    const body = JSON.parse(raw);
+    if (body && typeof body === 'object' && !Array.isArray(body)) return body;
+  } catch { /* falls through */ }
+  throw new HttpError(400, 'Expected a JSON object.');
+}
+
+const json = (res, value, status = 200) => res.writeHead(status, { 'Content-Type': 'application/json; charset=utf-8', 'Cache-Control': 'no-store' }).end(JSON.stringify(value));
+
+async function handle(req, res) {
   // Refuse DNS-rebinding and cross-site requests: this server can start agents.
   if (!LOCAL_HOSTS.has(req.headers.host || '')) { res.writeHead(403).end('forbidden host'); return; }
-  const url = new URL(req.url, `http://${req.headers.host}`);
+  res.setHeader('X-Content-Type-Options', 'nosniff');
+  res.setHeader('Referrer-Policy', 'no-referrer');
+  res.setHeader('X-Frame-Options', 'DENY');
+  let url;
+  try { url = new URL(req.url, `http://${req.headers.host}`); } catch { res.writeHead(400).end('bad request'); return; }
   const p = url.pathname;
+  const authed = isAuthed(req.headers, PORT, TOKEN);
 
   if (req.method === 'GET' && p === '/') {
-    const html = (await fsp.readFile(path.join(HERE, 'public', 'index.html'), 'utf8')).replace('__TOKEN__', TOKEN);
-    res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'no-store' }).end(html);
+    // The one-time link from `cc-mission-control open`: keep the token as a cookie and drop it from the address bar.
+    const given = url.searchParams.get('token');
+    if (given !== null) {
+      if (!tokenMatches(given, TOKEN)) { res.writeHead(403, { 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'no-store' }).end(SIGN_IN_PAGE); return; }
+      res.writeHead(303, { 'Set-Cookie': sessionCookie(PORT, TOKEN), Location: '/', 'Cache-Control': 'no-store' }).end();
+      return;
+    }
+    if (!authed) { res.writeHead(401, { 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'no-store' }).end(SIGN_IN_PAGE); return; }
+    const nonce = crypto.randomBytes(16).toString('base64');
+    const html = (await fsp.readFile(path.join(HERE, 'public', 'index.html'), 'utf8')).replace('<script>', `<script nonce="${nonce}">`);
+    res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'no-store', 'Content-Security-Policy': csp(nonce) }).end(html);
     return;
   }
+  if (!authed) { res.writeHead(401, { 'Content-Type': 'text/plain' }).end('sign in first: run cc-mission-control open'); return; }
+
   if (req.method === 'GET' && p === '/events') {
     sse(res); send(res, 'state', state); clients.add(res);
     req.on('close', () => clients.delete(res));
@@ -1320,50 +1383,52 @@ const server = http.createServer(async (req, res) => {
     catch { res.writeHead(404).end('not found'); }
     return;
   }
-  if (req.method === 'POST' && (p === '/api/avatar/speak' || p === '/api/avatar/warm')) {
-    if (req.headers['x-console-token'] !== TOKEN) { res.writeHead(403).end('bad token'); return; }
+
+  if (req.method !== 'POST') { res.writeHead(404).end('not found'); return; }
+  const a = p.match(/^\/api\/actions\/([a-z-]+)$/);
+  const known = a || p === '/api/attach' || p === '/api/avatar/speak' || p === '/api/avatar/warm';
+  if (!known) { res.writeHead(404).end('not found'); return; }
+  if (!mayAct(req.headers, PORT, TOKEN)) { res.writeHead(403).end('bad token'); return; }
+
+  if (p === '/api/avatar/speak' || p === '/api/avatar/warm') {
     const man = await avatarManifest();
     if (!man) { res.writeHead(404).end('no avatar bank'); return; }
     if (p === '/api/avatar/warm') { ttsWorker(); res.writeHead(204).end(); return; }
-    let raw = '';
-    for await (const chunk of req) { raw += chunk; if (raw.length > 1e5) break; }
-    let text = '';
-    try { text = String(JSON.parse(raw || '{}').text || '').slice(0, 800).trim(); } catch { /* empty */ }
+    const text = String((await readJson(req, 1e5)).text || '').slice(0, 800).trim();
     if (!text) { res.writeHead(400).end('no text'); return; }
     const r = await speakToFile(text, man.voice || 'bf_emma');
     if (!r.ok) { res.writeHead(503, { 'Content-Type': 'text/plain' }).end(r.error || 'speech failed'); return; }
     res.writeHead(200, { 'Content-Type': 'audio/wav', 'Cache-Control': 'no-store' }).end(await fsp.readFile(r.out));
     return;
   }
-  if (req.method === 'POST' && p === '/api/attach') {
-    if (req.headers['x-console-token'] !== TOKEN) { res.writeHead(403).end('bad token'); return; }
-    let raw = '';
-    for await (const chunk of req) { raw += chunk; if (raw.length > 15e6) break; }
-    let body = {};
-    try { body = JSON.parse(raw || '{}'); } catch { /* empty */ }
-    const r = raw.length > 15e6 ? { ok: false, out: 'Images up to 10 MB only.' } : await saveAttachment(body.dataUrl);
-    res.writeHead(200, { 'Content-Type': 'application/json' }).end(JSON.stringify(r));
+  if (p === '/api/attach') {
+    let body;
+    try { body = await readJson(req, 15e6); } catch (e) { if (e.status === 413) { req.resume(); res.setHeader('Connection', 'close'); json(res, { ok: false, out: 'Images up to 10 MB only.' }); return; } throw e; }
+    json(res, await saveAttachment(body.dataUrl));
     return;
   }
+  const result = await act(a[1], await readJson(req, 1e6));
+  setTimeout(tick, 300);
+  json(res, result);
+}
 
-  const a = p.match(/^\/api\/actions\/([a-z-]+)$/);
-  if (req.method === 'POST' && a) {
-    if (req.headers['x-console-token'] !== TOKEN) { res.writeHead(403).end('bad token'); return; }
-    let raw = '';
-    for await (const chunk of req) { raw += chunk; if (raw.length > 1e6) break; }
-    let body = {};
-    try { body = JSON.parse(raw || '{}'); } catch { /* empty */ }
-    const result = await act(a[1], body);
-    setTimeout(tick, 300);
-    res.writeHead(200, { 'Content-Type': 'application/json' }).end(JSON.stringify(result));
-    return;
-  }
-  res.writeHead(404).end('not found');
+const server = http.createServer((req, res) => {
+  handle(req, res).catch((e) => {
+    if (!(e instanceof HttpError)) console.error(`${req.method} ${String(req.url).slice(0, 200)} failed:`, e);
+    if (res.headersSent) { res.destroy(); return; }
+    const status = e instanceof HttpError ? e.status : 500;
+    // Whatever is left of the request body is read and dropped, so the client gets this reply
+    // instead of a reset connection; the connection is then closed.
+    req.resume();
+    res.writeHead(status, { 'Content-Type': 'text/plain', Connection: 'close' }).end(e instanceof HttpError ? e.message : 'internal error');
+  });
 });
+// A failed background job (a tick, a scan) is logged; it must not take the console down.
+process.on('unhandledRejection', (e) => console.error('Unhandled rejection:', e));
 
 server.on('error', (e) => {
   if (e.code !== 'EADDRINUSE') throw e;
-  console.error(`Port ${PORT} is already in use. Is CC Mission Control already running? Open http://localhost:${PORT}, or pick another port with --port.`);
+  console.error(`Port ${PORT} is already in use. Is CC Mission Control already running? Run cc-mission-control open, or pick another port with --port.`);
   process.exit(1);
 });
-server.listen(PORT, HOST, () => console.log(`CC Mission Control → http://localhost:${PORT}`));
+server.listen(PORT, HOST, () => console.log(`CC Mission Control → http://localhost:${PORT} (sign in with: cc-mission-control open)`));

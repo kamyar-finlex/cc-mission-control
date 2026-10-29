@@ -513,9 +513,12 @@ kbd { font-family: var(--mono); font-size: 11px; border: 1px solid var(--line); 
 <div id="toast"></div>
 
 <script>
-const TOKEN = '__TOKEN__';
+// Signed in by an HttpOnly cookie; this header tells the server a request came from this page.
+const ACT_HEADERS = { 'X-Console-Request': '1' };
 const $ = (id) => document.getElementById(id);
 const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+// A value used as a CSS class: only letters, digits, _ and -, whatever the server or an API sent.
+const cls = (s) => String(s ?? '').replace(/[^\w-]/g, '');
 const store = {
   get(k, d) { try { const v = localStorage.getItem(k); return v == null ? d : JSON.parse(v); } catch { return d; } },
   set(k, v) { try { localStorage.setItem(k, JSON.stringify(v)); } catch {} },
@@ -552,9 +555,10 @@ function toast(msg, ms = 2600) {
   clearTimeout(toast.t); toast.t = setTimeout(() => t.classList.remove('show'), ms);
 }
 
-// A page opened before the server got a new token can't act any more: reload it once and the user retries.
+// A page whose sign-in the console no longer accepts can't act: reload it once (the reload shows
+// how to sign in again if that is what's needed) and the user retries.
 function staleToken(r) {
-  if (r.status !== 403) return false;
+  if (r.status !== 401 && r.status !== 403) return false;
   let tried = false; try { tried = sessionStorage.getItem('tokenReload') === '1'; sessionStorage.setItem('tokenReload', '1'); } catch {}
   toast(tried ? 'The console refused this page. Reload it.' : 'This page was out of date with the console. Reloading, then try again.', 5000);
   if (!tried) setTimeout(() => location.reload(), 900);
@@ -564,7 +568,7 @@ try { setTimeout(() => sessionStorage.removeItem('tokenReload'), 10000); } catch
 
 async function action(name, body = {}) {
   try {
-    const r = await fetch(`/api/actions/${name}`, { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Console-Token': TOKEN }, body: JSON.stringify(body) });
+    const r = await fetch(`/api/actions/${name}`, { method: 'POST', headers: { 'Content-Type': 'application/json', ...ACT_HEADERS }, body: JSON.stringify(body) });
     if (staleToken(r)) return { ok: false };
     const j = await r.json();
     toast(j.out || (j.ok ? 'Done' : 'Failed'), j.ok ? 2600 : 6000);
@@ -619,10 +623,10 @@ function cardHtml(s) {
       ? `<div class="last summary" title="The Claude app's summary of the last turn">${esc(s.summary)}</div>`
       : `<div class="last">${esc(s.lastAssistant || s.lastUser || s.lastTool || '')}</div>`;
   const where = [s.project, s.worktree ? `⎇ ${s.worktree}` : s.branch ? `⎇ ${s.branch}` : ''].filter(Boolean).map(esc).join(' · ');
-  return `<div class="card ${isUnread(s) ? 'unread' : ''} ${selected === s.sessionId ? 'sel' : ''} ${s.linear?.projects?.length ? 'has-proj' : ''}" data-sid="${s.sessionId}" tabindex="0">
-    <div class="top"><span class="dot ${s.phase}"></span><span class="title" title="${esc(s.title + (s.story?.written?.text || s.story?.stitched ? `\n\n${s.story.written?.text || s.story.stitched}` : ''))}">${esc(s.title)}</span>
-      <button class="rbtn ${s.phase === 'waiting' ? 'show' : ''}" data-quick="${s.sessionId}" title="Reply (Markdown)">✎ Reply</button>${whyBtn(s)}${isUnread(s) ? '<span class="tag new">NEW</span>' : ''}<span class="age" data-ts="${s.lastTs || ''}">${ago(s.lastTs)}</span></div>
-    <div class="meta">${where}<span class="tag">${kindLabel[s.kind] || s.kind}</span>${s.model ? `<span class="tag">${esc(shortModel(s.model))}</span>` : ''}${s.ctx ? `<span class="tag" title="Context in use">${kTok(s.ctx)} ctx</span>` : ''}</div>
+  return `<div class="card ${isUnread(s) ? 'unread' : ''} ${selected === s.sessionId ? 'sel' : ''} ${s.linear?.projects?.length ? 'has-proj' : ''}" data-sid="${esc(s.sessionId)}" tabindex="0">
+    <div class="top"><span class="dot ${cls(s.phase)}"></span><span class="title" title="${esc(s.title + (s.story?.written?.text || s.story?.stitched ? `\n\n${s.story.written?.text || s.story.stitched}` : ''))}">${esc(s.title)}</span>
+      <button class="rbtn ${s.phase === 'waiting' ? 'show' : ''}" data-quick="${esc(s.sessionId)}" title="Reply (Markdown)">✎ Reply</button>${whyBtn(s)}${isUnread(s) ? '<span class="tag new">NEW</span>' : ''}<span class="age" data-ts="${esc(s.lastTs || '')}">${ago(s.lastTs)}</span></div>
+    <div class="meta">${where}<span class="tag">${esc(kindLabel[s.kind] || s.kind)}</span>${s.model ? `<span class="tag">${esc(shortModel(s.model))}</span>` : ''}${s.ctx ? `<span class="tag" title="Context in use">${kTok(s.ctx)} ctx</span>` : ''}</div>
     ${last}${aliveHtml(s)}${linksHtml(s)}${treeHtml(s.sessionId)}${projTab(s)}</div>`;
 }
 
@@ -630,7 +634,7 @@ function cardHtml(s) {
 const ALIVE_ICON = { ask: '?', block: '⛔', ship: '🚀', wip: '⏳', done: '✓' };
 function aliveHtml(s) {
   const a = s.phase === 'waiting' && s.alive; if (!a) return '';
-  return `<div class="alive t-${a.tone}" data-why="${s.sessionId}" title="Why it's still waiting: click for everything open">
+  return `<div class="alive t-${cls(a.tone)}" data-why="${esc(s.sessionId)}" title="Why it's still waiting: click for everything open">
     <span class="ic">${ALIVE_ICON[a.tone] || '•'}</span><span class="tx">${esc(a.text)}</span>${a.more ? `<span class="more">+${a.more} more</span>` : ''}</div>`;
 }
 
@@ -641,7 +645,7 @@ function whyBtn(s) {
   const asks = !!w?.ask;
   const open = s.alive && s.alive.tone !== 'done' ? Math.max(1, (s.openCheck ? s.openCheck.items : s.openItems || []).length) : 0;
   const tip = asks ? `It asks: ${w.ask}` : open ? `${open} thing${open === 1 ? '' : 's'} still open` : 'Why is it waiting?';
-  return `<button class="qbtn ${asks || open ? '' : 'quiet'}" data-why="${s.sessionId}" title="${esc(tip)}">?</button>`;
+  return `<button class="qbtn ${asks || open ? '' : 'quiet'}" data-why="${esc(s.sessionId)}" title="${esc(tip)}">?</button>`;
 }
 
 // The Linear project hangs under the card like a tab; clicking it filters the board.
@@ -657,14 +661,14 @@ function treeHtml(sid, depth = 0) {
   if (!kids?.length || depth > 4) return '';
   return `<div class="tree">${kids.map((k) => {
     const open = cardPrs(k).shown.map(prChip).join('');
-    return `<div class="branch"><div class="node ${selected === k.sessionId ? 'sel' : ''}" data-node="${k.sessionId}" title="${esc(k.summary || k.lastAssistant || k.title)}">
-      <span class="dot ${k.phase}"></span><span class="ntitle">${esc(k.title)}</span>${whyBtn(k)}${isUnread(k) ? '<span class="tag new">NEW</span>' : ''}${open}
-      <span class="age" data-ts="${k.lastTs || ''}">${ago(k.lastTs)}</span></div>${treeHtml(k.sessionId, depth + 1)}</div>`;
+    return `<div class="branch"><div class="node ${selected === k.sessionId ? 'sel' : ''}" data-node="${esc(k.sessionId)}" title="${esc(k.summary || k.lastAssistant || k.title)}">
+      <span class="dot ${cls(k.phase)}"></span><span class="ntitle">${esc(k.title)}</span>${whyBtn(k)}${isUnread(k) ? '<span class="tag new">NEW</span>' : ''}${open}
+      <span class="age" data-ts="${esc(k.lastTs || '')}">${ago(k.lastTs)}</span></div>${treeHtml(k.sessionId, depth + 1)}</div>`;
   }).join('')}</div>`;
 }
 
 // Linear's "In Review" is a started state; give it its own colour.
-const stClass = (t) => (/review/i.test(t.status || '') ? 'review' : t.statusType || (t.status ? 'unstarted' : 'backlog'));
+const stClass = (t) => (/review/i.test(t.status || '') ? 'review' : cls(t.statusType) || (t.status ? 'unstarted' : 'backlog'));
 const ticketTip = (t) => [`${t.id}${t.title ? ` — ${t.title}` : ''}`,
   [t.status, t.priority && t.priority !== 'No priority' ? t.priority : '', t.assignee].filter(Boolean).join(' · '),
   t.project ? `Project: ${t.project}` : '', t.updatedAt ? `Linear data as of ${new Date(t.updatedAt).toLocaleString()}` : 'Not fetched from Linear yet'].filter(Boolean).join('\n');
@@ -689,7 +693,7 @@ function prTip(p) {
   return [`${p.repo}#${p.number}${p.title ? ` — ${p.title}` : ''}`,
     [state, p.state === 'OPEN' && REVIEW[p.review], p.state === 'OPEN' && CHECKS[p.checks]].filter(Boolean).join(' · ')].join('\n');
 }
-const prChip = (p) => `<a class="prchip ${prClass(p)}" href="${esc(p.url)}" target="_blank" rel="noopener" title="${esc(prTip(p))}">${PR_ICON}#${p.number}</a>`;
+const prChip = (p) => `<a class="prchip ${prClass(p)}" href="${esc(p.url)}" target="_blank" rel="noopener" title="${esc(prTip(p))}">${PR_ICON}#${esc(p.number)}</a>`;
 const ticketChip = (t, full) => `<a class="lchip ${full ? '' : 'mini'}" href="${esc(t.url || '#')}" target="_blank" rel="noopener" title="${esc(ticketTip(t))}">
   <span class="sdot ${stClass(t)}"></span><span class="id">${esc(t.id)}</span>${t.status ? `<span class="st">${esc(t.status)}</span>` : ''}${full && t.title ? `<span class="nm">· ${esc(t.title)}</span>` : ''}</a>`;
 
@@ -709,9 +713,9 @@ function linksHtml(s) {
   const [latest, ...older] = L?.tickets || [];
   if (!latest && !shown.length) return '';
   const chips = [];
-  if (shown.length) chips.push(`<span class="prs">${shown.map(prChip).join('')}${rest ? `<button class="prmore" data-prs="${s.sessionId}" title="All pull requests of this session">+${rest} ▾</button>` : ''}</span>`);
+  if (shown.length) chips.push(`<span class="prs">${shown.map(prChip).join('')}${rest ? `<button class="prmore" data-prs="${esc(s.sessionId)}" title="All pull requests of this session">+${rest} ▾</button>` : ''}</span>`);
   // The latest task on the card (id and status; titles are in the dropdown), the others one click away.
-  if (latest) chips.push(`<span class="tks">${ticketChip(latest, false)}${older.length ? `<button class="prmore" data-tickets="${s.sessionId}" title="All Linear tickets of this session">+${older.length} ▾</button>` : ''}</span>`);
+  if (latest) chips.push(`<span class="tks">${ticketChip(latest, false)}${older.length ? `<button class="prmore" data-tickets="${esc(s.sessionId)}" title="All Linear tickets of this session">+${older.length} ▾</button>` : ''}</span>`);
   return `<div class="links">${chips.join('')}</div>`;
 }
 
@@ -724,7 +728,7 @@ const DEPLOY_ICON = { gate: '⏸', beta: '🧪', tagged: '🏷', ready: '📦', 
 function deploysPanel(s) {
   const d = s.deploys; if (!d?.length) return '';
   const pending = d.filter((x) => x.stage !== 'prod').length;
-  const rows = d.map((x) => `<div class="drow2 st-${x.stage}" title="${esc(x.evidence)}">
+  const rows = d.map((x) => `<div class="drow2 st-${cls(x.stage)}" title="${esc(x.evidence)}">
       <span class="dic">${DEPLOY_ICON[x.stage] || '•'}</span><span class="drepo">${esc(x.repo)}</span><span class="dver">${esc(x.version)}</span>
       <span class="dstage">${esc(x.label)}</span><span class="dev">${esc(x.evidence)}</span><span class="ts">${x.ts ? `${ago(x.ts)} ago` : ''}</span>
       ${x.stage !== 'prod' ? `<button type="button" class="dbtn" data-deploy="${esc(x.repo)}" title="Ask this session's agent to deploy ${esc(x.repo)} ${esc(x.version)} to production (it reports the risks first and waits for your yes)">🚀 Deploy</button>` : ''}</div>`).join('');
@@ -798,7 +802,7 @@ $('d-linear').addEventListener('click', (e) => {
 function linearPanel(s) {
   const prs = (s.prs || []).length
     ? section('prs', `Pull requests <span class="cnt">${s.prs.length}</span>`, s.prs.map((p) => `<a class="lrow" href="${esc(p.url)}" target="_blank" rel="noopener">
-        <span class="lid"><span class="prchip ${prClass(p)}">${PR_ICON}#${p.number}</span></span><span class="lt"><div>${esc(p.title || `${p.repo}#${p.number}`)}</div><div class="lm">${esc(prTip(p).split('\n')[1] || '')} · ${esc(p.repo)}</div></span></a>`).join(''))
+        <span class="lid"><span class="prchip ${prClass(p)}">${PR_ICON}#${esc(p.number)}</span></span><span class="lt"><div>${esc(p.title || `${p.repo}#${p.number}`)}</div><div class="lm">${esc(prTip(p).split('\n')[1] || '')} · ${esc(p.repo)}</div></span></a>`).join(''))
     : '';
   return deploysPanel(s) + linearTickets(s) + prs;
 }
@@ -852,7 +856,7 @@ async function attachFiles(m, files) {
   for (const f of files) {
     if (!/^image\/(png|jpeg|gif|webp)$/.test(f.type)) { toast('Only PNG, JPEG, GIF or WebP images can be attached'); continue; }
     const dataUrl = await new Promise((ok, fail) => { const r = new FileReader(); r.onload = () => ok(r.result); r.onerror = fail; r.readAsDataURL(f); });
-    const r = await fetch('/api/attach', { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Console-Token': TOKEN }, body: JSON.stringify({ dataUrl }) })
+    const r = await fetch('/api/attach', { method: 'POST', headers: { 'Content-Type': 'application/json', ...ACT_HEADERS }, body: JSON.stringify({ dataUrl }) })
       .then((x) => (staleToken(x) ? { ok: false, out: 'Reloading the page; paste the image again.' } : x.json()))
       .catch(() => ({ ok: false, out: 'Upload failed: the console did not answer.' }));
     if (!r.ok) { toast(r.out); continue; }
@@ -1013,7 +1017,7 @@ function openQuickReply(sid, anchor) {
   $('qr-title').textContent = s.title;
   $('qr-body').innerHTML = editorHtml(`reply:${sid}`, { placeholder: `Reply to “${s.title}” in Markdown…`, send: d.label, cancel: 'Cancel', hint: d.how, agentSwitch: !!s.appId });
   const qr = $('qr'); qr.hidden = false;
-  const r = (anchor || document.querySelector(`.card[data-sid="${sid}"]`))?.getBoundingClientRect() || { left: innerWidth / 2 - 240, bottom: 120, top: 120 };
+  const r = (anchor || document.querySelector(`.card[data-sid="${esc(sid)}"]`))?.getBoundingClientRect() || { left: innerWidth / 2 - 240, bottom: 120, top: 120 };
   const h = qr.offsetHeight, w = qr.offsetWidth;
   const top = r.bottom + 6 + h < innerHeight ? r.bottom + 6 : Math.max(8, r.top - h - 6);
   qr.style.top = `${top}px`;
@@ -1178,7 +1182,7 @@ $('storyDlg').addEventListener('click', (e) => {
 
 // One line of chips that stands in for the panels while the details are collapsed.
 function miniPanel(s) {
-  const chips = [...(s.deploys || []).filter((x) => x.stage !== 'prod').map((x) => `<span class="lchip dchip st-${x.stage}" title="${esc(x.label)}: ${esc(x.evidence)}">${DEPLOY_ICON[x.stage]} <span class="id">${esc(x.repo)} ${esc(x.version)}</span></span>`),
+  const chips = [...(s.deploys || []).filter((x) => x.stage !== 'prod').map((x) => `<span class="lchip dchip st-${cls(x.stage)}" title="${esc(x.label)}: ${esc(x.evidence)}">${DEPLOY_ICON[x.stage]} <span class="id">${esc(x.repo)} ${esc(x.version)}</span></span>`),
     ...(s.linear?.tickets || []).slice(0, 3).map((t, i) => ticketChip(t, i === 0)), ...(s.prs || []).filter((p) => p.state === 'OPEN').map(prChip)];
   return chips.join('');
 }
@@ -1409,7 +1413,10 @@ function renderHead(s) {
 }
 
 // Small Markdown renderer: everything is escaped first, then only known syntax becomes markup.
+// U+0000-U+0002 mark placeholders below, so they are removed from the text first.
+const PLACEHOLDER_CHARS = /[\u0000-\u0002]/g;
 function inline(t) {
+  t = String(t ?? '').replace(PLACEHOLDER_CHARS, '');
   const codes = [];
   t = t.replace(/`([^`\n]+)`/g, (_, c) => `\u0000${codes.push(c) - 1}\u0000`);
   // Only local images (pasted attachments, transcript images) are shown inline.
@@ -1423,20 +1430,22 @@ function inline(t) {
     .replace(/(^|[^\w*])\*([^*\n]+)\*(?!\w)/g, '$1<i>$2</i>')
     .replace(/(^|\W)_([^_\n]+)_(?!\w)/g, '$1<i>$2</i>')
     .replace(/~~([^~\n]+)~~/g, '<s>$1</s>');
-  return t.replace(/\u0000(\d+)\u0000/g, (_, i) => `<code>${esc(codes[i])}</code>`)
-    .replace(/\u0001(\d+)\u0001/g, (_, i) => `<img class="mdimg" src="${esc(pics[i][1])}" alt="${esc(pics[i][0] || 'image')}">`);
+  return t.replace(/\u0000(\d+)\u0000/g, (_, i) => `<code>${esc(codes[i] ?? '')}</code>`)
+    .replace(/\u0001(\d+)\u0001/g, (_, i) => (pics[i] ? `<img class="mdimg" src="${esc(pics[i][1])}" alt="${esc(pics[i][0] || 'image')}">` : ''));
 }
 
 // HTML in a message (often entity-escaped, as GitHub and Linear bot comments arrive) becomes
 // Markdown before rendering, so it reads as text rather than as tags. Code is left alone.
 const ENTITIES = { lt: '<', gt: '>', amp: '&', quot: '"', apos: "'", nbsp: ' ' };
+// Numeric entities outside Unicode (&#x110000;) stay as written instead of throwing and blanking the feed.
+const codePoint = (e) => { const n = Number(e.slice(1).replace(/^x/i, '0x')); return Number.isInteger(n) && n >= 0 && n <= 0x10ffff ? String.fromCodePoint(n) : undefined; };
 const decodeEntities = (t) => t.replace(/&(#x[0-9a-f]+|#\d+|[a-z]+);/gi, (m, e) =>
-  e[0] === '#' ? String.fromCodePoint(parseInt(e.slice(1).replace(/^x/i, '0x'))) : ENTITIES[e.toLowerCase()] ?? m);
+  (e[0] === '#' ? codePoint(e) : ENTITIES[e.toLowerCase()]) ?? m);
 const attr = (tag, name) => (tag.match(new RegExp(`\\b${name}\\s*=\\s*["']([^"']*)["']`, 'i')) || [])[1] || '';
 const BLOCK_TAGS = 'p|div|details|ul|ol|table|thead|tbody|tr|blockquote|section|article|center|dl';
 function htmlToMd(text) {
   const codes = [];
-  let t = text.replace(/`[^`\n]+`/g, (c) => `\u0002${codes.push(c) - 1}\u0002`);
+  let t = String(text ?? '').replace(PLACEHOLDER_CHARS, '').replace(/`[^`\n]+`/g, (c) => `\u0002${codes.push(c) - 1}\u0002`);
   t = decodeEntities(t)
     .replace(/<!--[\s\S]*?-->/g, '')
     .replace(/<a\b([^>]*)>([\s\S]*?)<\/a>/gi, (_, a, label) => {
@@ -1457,7 +1466,7 @@ function htmlToMd(text) {
     .replace(new RegExp(`</?(${BLOCK_TAGS})\\b[^>]*>`, 'gi'), '\n\n')
     .replace(/<\/?(span|sub|sup|kbd|small|u|font)\b[^>]*>/gi, '')
     .replace(/\n{3,}/g, '\n\n');
-  return t.replace(/\u0002(\d+)\u0002/g, (_, i) => codes[i]);
+  return t.replace(/\u0002(\d+)\u0002/g, (_, i) => codes[i] ?? '');
 }
 function md(src) {
   // Fenced code keeps its text exactly; everything else has its HTML turned into Markdown.
@@ -1516,7 +1525,7 @@ function mdBlocks(src) {
 }
 const tstr = (ts) => (ts ? new Date(ts).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '');
 
-const thumbs = (hashes, alt) => (hashes || []).map((h) => `<img class="thumb" src="/api/images/${h}" alt="${alt}" loading="lazy">`).join('');
+const thumbs = (hashes, alt) => (hashes || []).map((h) => `<img class="thumb" src="/api/images/${esc(h)}" alt="${esc(alt)}" loading="lazy">`).join('');
 
 function evHtml(e) {
   if (e.kind === 'user') return `<div class="ev user md">${e.text ? md(e.text) : ''}${e.images?.length ? `<div class="thumbs">${thumbs(e.images, 'image you sent')}</div>` : ''}</div>`;
@@ -1709,7 +1718,7 @@ function envelope(buf) {
 }
 
 function avatarFetch(item) {
-  item.audio ??= fetch('/api/avatar/speak', { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Console-Token': TOKEN }, body: JSON.stringify({ text: item.text }) })
+  item.audio ??= fetch('/api/avatar/speak', { method: 'POST', headers: { 'Content-Type': 'application/json', ...ACT_HEADERS }, body: JSON.stringify({ text: item.text }) })
     .then((r) => (r.ok ? r.arrayBuffer() : r.text().then((m) => Promise.reject(new Error(m)))))
     .then((b) => av.ctx.decodeAudioData(b));
   return item.audio;
@@ -1767,7 +1776,7 @@ function avatarControls() {
 
 $('av-voice').onclick = () => {
   av.on = !av.on; store.set('avatarVoice', av.on);
-  if (av.on) { audioReady(); avatarLoad(); fetch('/api/avatar/warm', { method: 'POST', headers: { 'X-Console-Token': TOKEN } }).catch(() => {}); } else avatarStop();
+  if (av.on) { audioReady(); avatarLoad(); fetch('/api/avatar/warm', { method: 'POST', headers: { ...ACT_HEADERS } }).catch(() => {}); } else avatarStop();
   avatarControls();
 };
 $('av-last').onclick = () => {
@@ -1842,7 +1851,7 @@ function hideMenu() { $('menu').classList.remove('open'); $('menu').dataset.for 
 
 const mi = (o) => o.href
   ? `<a class="mi" role="menuitem" href="${esc(o.href)}" target="_blank" rel="noopener"${o.title ? ` title="${esc(o.title)}"` : ''}><span class="ic">${o.icon || ''}</span><span class="tx">${o.html || esc(o.label)}</span>${o.sub ? `<span class="sub">${esc(o.sub)}</span>` : ''}</a>`
-  : `<button class="mi ${o.danger ? 'danger' : ''}" role="menuitem" data-mact="${o.act}" data-sid="${o.sid}"${o.title ? ` title="${esc(o.title)}"` : ''}><span class="ic">${o.icon || ''}</span><span class="tx">${esc(o.label)}</span>${o.sub ? `<span class="sub">${esc(o.sub)}</span>` : ''}</button>`;
+  : `<button class="mi ${o.danger ? 'danger' : ''}" role="menuitem" data-mact="${esc(o.act)}" data-sid="${esc(o.sid)}"${o.title ? ` title="${esc(o.title)}"` : ''}><span class="ic">${o.icon || ''}</span><span class="tx">${esc(o.label)}</span>${o.sub ? `<span class="sub">${esc(o.sub)}</span>` : ''}</button>`;
 const ticketItem = (t) => mi({ href: t.url || '#', icon: `<span class="sdot ${stClass(t)}"></span>`, label: `${t.id} ${t.title || ''}`, sub: t.status || '', title: ticketTip(t) + (t.onBranch ? '\nOn this branch' : t.lastAt ? `\nLast touched ${ago(t.lastAt)} ago` : '') });
 const prItem = (p) => mi({ href: p.url, icon: `<span class="prchip ${prClass(p)}" style="padding:0 3px">${PR_ICON}</span>`, label: `#${p.number} ${p.title || ''}`, sub: p.state === 'OPEN' ? (p.isDraft ? 'Draft' : REVIEW[p.review] || 'Open') : p.state[0] + p.state.slice(1).toLowerCase(), title: prTip(p) });
 
@@ -1918,7 +1927,7 @@ function renderSendBtn() {
   $('compose').dataset.sig = ''; const s = current(); if (s) renderHead(s); // replies relabel
 }
 async function showAutoStatus() {
-  const r = await fetch('/api/actions/automation-status', { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Console-Token': TOKEN }, body: '{}' })
+  const r = await fetch('/api/actions/automation-status', { method: 'POST', headers: { 'Content-Type': 'application/json', ...ACT_HEADERS }, body: '{}' })
     .then((x) => (staleToken(x) ? { ok: false, out: 'Reloading the page…' } : x.json())).catch(() => ({ ok: false, out: 'Console unreachable' }));
   const msg = r.ok ? '✓ Allowed. Send to agent can be turned on.'
     : r.why === 'accessibility' ? '✗ Accessibility is not allowed for node yet (steps 1 to 3).'
@@ -1954,12 +1963,13 @@ renderSendBtn();
 $('search').addEventListener('input', (e) => { filter = e.target.value; renderBoard(); });
 
 document.addEventListener('keydown', (e) => {
-  const typing = ['INPUT', 'TEXTAREA', 'SELECT'].includes(document.activeElement?.tagName);
+  const typing = ['INPUT', 'TEXTAREA', 'SELECT'].includes(document.activeElement?.tagName) || !!document.activeElement?.isContentEditable;
   if (e.key === 'Escape' && !$('lightbox').hidden) { $('lightbox').hidden = true; return; }
   if (e.key === 'Escape' && !$('qr').hidden) { closeQuickReply(); return; }
   if (e.key === 'Escape' && $('menu').classList.contains('open')) { hideMenu(); return; }
-  if (e.key === 'Escape' && ($('storyDlg').open || $('whyDlg').open)) return;
-  if (e.key === 'Escape') { if ($('newDlg').open) return; if (typing) { document.activeElement.blur(); return; } closeDrawer(); return; }
+  // An open dialog owns the keyboard: Escape closes just the dialog, and shortcuts wait.
+  if (document.querySelector('dialog[open]')) return;
+  if (e.key === 'Escape') { if (typing) { document.activeElement.blur(); return; } closeDrawer(); return; }
   if (typing || e.metaKey || e.ctrlKey || e.altKey) return;
   if (e.key === 'f' && $('drawer').classList.contains('open')) toggleMax();
   else if (e.key === 'd' && $('drawer').classList.contains('open')) toggleFold();

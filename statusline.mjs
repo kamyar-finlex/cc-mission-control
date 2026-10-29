@@ -9,7 +9,7 @@ import path from 'node:path';
 let raw = '';
 for await (const chunk of process.stdin) raw += chunk;
 let input = {};
-try { input = JSON.parse(raw); } catch { /* print nothing useful */ }
+try { input = JSON.parse(raw) || {}; } catch { /* print nothing useful */ }
 
 const limits = input.rate_limits;
 if (limits && Object.keys(limits).length) {
