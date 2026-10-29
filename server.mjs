@@ -1194,6 +1194,78 @@ function digest(range) {
   return { range: label, from: new Date(from).toISOString(), generatedAt: new Date().toISOString(), projects: [...projects.values()], unassigned };
 }
 
+// ---------- avatar (optional) ----------
+// A talking face that reads replies aloud, all local: a mouth bank built once by avatar/bank_build.py
+// and Kokoro speech from avatar/tts_worker.py. Off unless the bank exists.
+
+const AVATAR_DIR = process.env.CCMC_AVATAR_DIR || path.join(os.homedir(), '.local', 'share', 'presenter-film', 'avatar', 'clara');
+const KOKORO_PY = process.env.CCMC_KOKORO_PYTHON || path.join(os.homedir(), '.local', 'share', 'presenter-film', 'venvs', 'kokoro', 'bin', 'python');
+const TTS_DIR = path.join(os.tmpdir(), 'cc-mission-control-tts');
+let tts = null;
+
+function ttsWorker() {
+  if (tts) return tts;
+  fs.mkdirSync(TTS_DIR, { recursive: true });
+  const child = spawn(KOKORO_PY, ['-I', path.join(HERE, 'avatar', 'tts_worker.py')], { stdio: ['pipe', 'pipe', 'ignore'] });
+  const waiting = new Map();
+  let buf = '';
+  let ready;
+  const w = { child, waiting, next: 1, alive: true, ready: new Promise((r) => { ready = r; }) };
+  tts = w;
+  // A worker that never says it is ready (stuck import, model fetch) is killed, so requests fail instead of hanging.
+  const startup = setTimeout(() => child.kill(), 120000);
+  child.stdout.on('data', (d) => {
+    buf += d;
+    let i;
+    while ((i = buf.indexOf('\n')) >= 0) {
+      const line = buf.slice(0, i); buf = buf.slice(i + 1);
+      let msg; try { msg = JSON.parse(line); } catch { continue; }
+      if (msg.ready) { clearTimeout(startup); ready(); }
+      waiting.get(msg.id)?.(msg); waiting.delete(msg.id);
+    }
+  });
+  const fail = () => {
+    clearTimeout(startup);
+    w.alive = false;
+    for (const r of waiting.values()) r({ ok: false, error: 'the voice stopped' });
+    waiting.clear();
+    if (tts === w) tts = null;
+    ready();
+  };
+  child.on('exit', fail);
+  child.on('error', fail);
+  child.stdin.on('error', () => { /* a dead worker's pipe: 'exit' reports it */ });
+  return w;
+}
+
+async function speakToFile(text, voice) {
+  const key = crypto.createHash('sha1').update(`${voice}|${text}`).digest('hex').slice(0, 20);
+  const out = path.join(TTS_DIR, `${key}.wav`);
+  if (fs.existsSync(out)) return { ok: true, out };
+  const w = ttsWorker();
+  await w.ready;
+  if (!w.alive) return { ok: false, error: 'the voice did not start' };
+  const id = w.next++;
+  const reply = new Promise((r) => {
+    if (!w.alive) { r({ ok: false, error: 'the voice stopped' }); return; }
+    w.waiting.set(id, r);
+    setTimeout(() => { if (w.waiting.delete(id)) r({ ok: false, error: 'timed out' }); }, 60000);
+  });
+  w.child.stdin.write(JSON.stringify({ id, text, voice, out }) + '\n');
+  const r = await reply;
+  return r.ok ? { ok: true, out } : r;
+}
+
+async function avatarManifest() {
+  try {
+    const file = path.join(AVATAR_DIR, 'manifest.json');
+    // `version` changes whenever the bank is rebuilt; the page puts it on every image URL, so cached
+    // images from an older bank are never paired with this manifest.
+    const [text, st] = await Promise.all([fsp.readFile(file, 'utf8'), fsp.stat(file)]);
+    return { ...JSON.parse(text), version: Math.round(st.mtimeMs) };
+  } catch { return null; }
+}
+
 const LOCAL_HOSTS = new Set([`127.0.0.1:${PORT}`, `localhost:${PORT}`]);
 
 const server = http.createServer(async (req, res) => {
@@ -1234,6 +1306,33 @@ const server = http.createServer(async (req, res) => {
     const type = Object.entries(IMAGE_TYPES).find(([, e]) => e === ext)?.[0];
     try { if (!file || !type) throw new Error('bad name'); res.writeHead(200, { 'Content-Type': type, 'Cache-Control': 'private, max-age=86400' }).end(await fsp.readFile(file)); }
     catch { res.writeHead(404).end('not found'); }
+    return;
+  }
+  if (req.method === 'GET' && p === '/api/avatar/manifest') {
+    const man = await avatarManifest();
+    if (!man) { res.writeHead(404).end('no avatar bank'); return; }
+    res.writeHead(200, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' }).end(JSON.stringify(man));
+    return;
+  }
+  const av = p.match(/^\/api\/avatar\/((?:base\/\d{4})|(?:pass\d{1,2}))\.jpg$/);
+  if (req.method === 'GET' && av) {
+    try { res.writeHead(200, { 'Content-Type': 'image/jpeg', 'Cache-Control': 'private, max-age=3600' }).end(await fsp.readFile(path.join(AVATAR_DIR, `${av[1]}.jpg`))); }
+    catch { res.writeHead(404).end('not found'); }
+    return;
+  }
+  if (req.method === 'POST' && (p === '/api/avatar/speak' || p === '/api/avatar/warm')) {
+    if (req.headers['x-console-token'] !== TOKEN) { res.writeHead(403).end('bad token'); return; }
+    const man = await avatarManifest();
+    if (!man) { res.writeHead(404).end('no avatar bank'); return; }
+    if (p === '/api/avatar/warm') { ttsWorker(); res.writeHead(204).end(); return; }
+    let raw = '';
+    for await (const chunk of req) { raw += chunk; if (raw.length > 1e5) break; }
+    let text = '';
+    try { text = String(JSON.parse(raw || '{}').text || '').slice(0, 800).trim(); } catch { /* empty */ }
+    if (!text) { res.writeHead(400).end('no text'); return; }
+    const r = await speakToFile(text, man.voice || 'bf_emma');
+    if (!r.ok) { res.writeHead(503, { 'Content-Type': 'text/plain' }).end(r.error || 'speech failed'); return; }
+    res.writeHead(200, { 'Content-Type': 'audio/wav', 'Cache-Control': 'no-store' }).end(await fsp.readFile(r.out));
     return;
   }
   if (req.method === 'POST' && p === '/api/attach') {
