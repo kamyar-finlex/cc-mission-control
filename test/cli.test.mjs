@@ -56,3 +56,12 @@ test('uninstall leaves a status line or skill the user changed', () => {
   assert.match(JSON.parse(fs.readFileSync(settings, 'utf8')).statusLine.command, /mine\.sh/);
   assert.ok(fs.existsSync(skill));
 });
+
+test('uninstall keeps an earlier copy of the skill that setup saved', () => {
+  cli('setup', '--no-service');
+  fs.writeFileSync(`${skill}.bak`, 'my older version');
+  const out = cli('uninstall');
+  assert.match(out, /Kept: the earlier copy of the skill setup kept/);
+  assert.ok(!fs.existsSync(skill));
+  assert.equal(fs.readFileSync(`${skill}.bak`, 'utf8'), 'my older version');
+});

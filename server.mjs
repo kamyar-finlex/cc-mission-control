@@ -33,8 +33,9 @@ process.on('unhandledRejection', (e) => console.error('Unhandled rejection:', e)
 server.on('error', (e) => {
   if (e.code !== 'EADDRINUSE') throw e;
   console.error(`Port ${PORT} is already in use. Is CC Mission Control already running? Run cc-mission-control open, or pick another port with --port.`);
-  // A clean exit: the always-on service restarts only after a crash, so it stops here instead of
-  // retrying every few seconds. Once the port is free, cc-mission-control setup starts it again.
-  process.exit(0);
+  // As the always-on service, a clean exit: it restarts only after a crash, so it stops here instead
+  // of retrying every few seconds; cc-mission-control setup starts it again once the port is free.
+  // Run from a terminal, it is a failure like any other.
+  process.exit(process.env.CCMC_LOG ? 0 : 1);
 });
 server.listen(PORT, HOST, () => console.log(`CC Mission Control → http://localhost:${PORT} (sign in with: cc-mission-control open)`));

@@ -10,7 +10,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import http from 'node:http';
-import { spawn } from 'node:child_process';
+import { execFileSync, spawn } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { parseArgs, USAGE } from '../lib/cli-args.mjs';
 import { dataDir, ensureDataDir, writeFileAtomicSync } from '../lib/store.mjs';
@@ -98,7 +98,12 @@ function installService() {
     return;
   }
   fs.mkdirSync(path.dirname(PLIST), { recursive: true });
-  const r = reloadAgent({ uid: process.getuid(), label: LABEL, plist: PLIST, writePlist: () => fs.writeFileSync(PLIST, plist()) });
+  let holder = '';
+  const r = reloadAgent({ uid: process.getuid(), label: LABEL, plist: PLIST, writePlist: () => {
+    fs.writeFileSync(PLIST, plist());
+    // The old service is stopped by now, so anything still listening on the port is something else.
+    try { holder = execFileSync('lsof', ['-nP', `-iTCP:${port}`, '-sTCP:LISTEN', '-Fc'], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] }).match(/^c(.+)$/m)?.[1] || ''; } catch { /* nothing listening */ }
+  } });
   if (!r.ok && !r.written) {
     say(`• Always-on service: not changed, because ${r.error}. Run  cc-mission-control setup  again in a moment.`);
     return;
@@ -106,6 +111,11 @@ function installService() {
   if (!r.ok) {
     say(`• Always-on service: written to ${PLIST}, but launchctl could not start it (${r.error}).`);
     say('  It starts at your next login. To start it now, run  cc-mission-control setup  again.');
+    return;
+  }
+  if (holder) {
+    say(`• Always-on service: installed, but port ${port} is in use by another program (${holder}), so it stopped at once.`);
+    say(`  Stop that program and run  cc-mission-control setup  again, or use another port with --port.`);
     return;
   }
   say(`• Always-on service: installed. It starts at login, restarts if it dies, and serves http://localhost:${port}`);
@@ -212,7 +222,13 @@ function uninstall() {
   const skill = path.join(SKILL_DEST, 'SKILL.md');
   let installed = null;
   try { installed = fs.readFileSync(skill, 'utf8'); } catch { /* not installed */ }
-  if (installed !== null && installed === fs.readFileSync(path.join(SKILL_SRC, 'SKILL.md'), 'utf8')) { fs.rmSync(SKILL_DEST, { recursive: true, force: true }); removed.push('the /project-updates skill'); }
+  if (installed !== null && installed === fs.readFileSync(path.join(SKILL_SRC, 'SKILL.md'), 'utf8')) {
+    fs.rmSync(skill);
+    removed.push('the /project-updates skill');
+    // An earlier copy setup kept (perhaps the user's own version) stays.
+    if (fs.existsSync(`${skill}.bak`)) kept.push(`the earlier copy of the skill setup kept: ${skill}.bak`);
+    else fs.rmSync(SKILL_DEST, { recursive: true, force: true });
+  }
   else if (installed !== null) kept.push(`the /project-updates skill, which you changed: ${SKILL_DEST}`);
 
   for (const [file, what] of [[LOG, 'its log'], [path.join(os.tmpdir(), 'cc-mission-control-tts'), 'its speech cache']]) {
