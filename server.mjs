@@ -5,6 +5,7 @@
 // ~/.claude/projects (transcripts); drives sessions through the `claude` CLI.
 // This file starts the background scans and the HTTP server; the work lives in src/.
 import fs from 'node:fs';
+import { trimLog } from './lib/store.mjs';
 import { scanAppMeta } from './src/app-meta.mjs';
 import { HOST, PORT, SESS_DIR } from './src/config.mjs';
 import { server } from './src/http.mjs';
@@ -12,6 +13,8 @@ import { linearTick } from './src/linear.mjs';
 import { prTick } from './src/prs.mjs';
 import { clients, state, tick } from './src/state.mjs';
 import { scanTranscripts } from './src/transcript.mjs';
+
+if (process.env.CCMC_LOG) trimLog(process.env.CCMC_LOG); // set by the always-on service
 
 await scanTranscripts();
 await scanAppMeta();
@@ -30,6 +33,9 @@ process.on('unhandledRejection', (e) => console.error('Unhandled rejection:', e)
 server.on('error', (e) => {
   if (e.code !== 'EADDRINUSE') throw e;
   console.error(`Port ${PORT} is already in use. Is CC Mission Control already running? Run cc-mission-control open, or pick another port with --port.`);
-  process.exit(1);
+  // As the always-on service, a clean exit: it restarts only after a crash, so it stops here instead
+  // of retrying every few seconds; cc-mission-control setup starts it again once the port is free.
+  // Run from a terminal, it is a failure like any other.
+  process.exit(process.env.CCMC_LOG ? 0 : 1);
 });
 server.listen(PORT, HOST, () => console.log(`CC Mission Control → http://localhost:${PORT} (sign in with: cc-mission-control open)`));
