@@ -47,6 +47,8 @@ function visible() {
       .join(' ').toLowerCase().includes(q)));
 }
 
+// Spoken names for the status dots, which otherwise show the phase only by colour.
+const PHASE_LABEL = { working: 'Working', waiting: 'Waiting for you', ended: 'Ended' };
 function cardHtml(s) {
   const last = s.phase === 'working' && s.lastKind === 'tool' && s.lastTool
     ? `<div class="last tool">⚙ ${esc(s.lastTool)}</div>`
@@ -54,8 +56,8 @@ function cardHtml(s) {
       ? `<div class="last summary" title="The Claude app's summary of the last turn">${esc(s.summary)}</div>`
       : `<div class="last">${esc(s.lastAssistant || s.lastUser || s.lastTool || '')}</div>`;
   const where = [s.project, s.worktree ? `⎇ ${s.worktree}` : s.branch ? `⎇ ${s.branch}` : ''].filter(Boolean).map(esc).join(' · ');
-  return `<div class="card ${isUnread(s) ? 'unread' : ''} ${ui.selected === s.sessionId ? 'sel' : ''} ${s.linear?.projects?.length ? 'has-proj' : ''}" data-sid="${esc(s.sessionId)}" tabindex="0">
-    <div class="top"><span class="dot ${cls(s.phase)}"></span><span class="title" title="${esc(s.title + (s.story?.written?.text || s.story?.stitched ? `\n\n${s.story.written?.text || s.story.stitched}` : ''))}">${esc(s.title)}</span>
+  return `<div class="card ${isUnread(s) ? 'unread' : ''} ${ui.selected === s.sessionId ? 'sel' : ''} ${s.linear?.projects?.length ? 'has-proj' : ''}" data-sid="${esc(s.sessionId)}" tabindex="0" role="group" aria-label="${esc(s.title)}, ${PHASE_LABEL[s.phase] || esc(s.phase)}">
+    <div class="top"><span class="dot ${cls(s.phase)}" role="img" aria-label="${PHASE_LABEL[s.phase] || esc(s.phase)}"></span><span class="title" title="${esc(s.title + (s.story?.written?.text || s.story?.stitched ? `\n\n${s.story.written?.text || s.story.stitched}` : ''))}">${esc(s.title)}</span>
       <button class="rbtn ${s.phase === 'waiting' ? 'show' : ''}" data-quick="${esc(s.sessionId)}" title="Reply (Markdown)">✎ Reply</button>${whyBtn(s)}${isUnread(s) ? '<span class="tag new">NEW</span>' : ''}<span class="age" data-ts="${esc(s.lastTs || '')}">${ago(s.lastTs)}</span></div>
     <div class="meta">${where}<span class="tag">${esc(kindLabel[s.kind] || s.kind)}</span>${s.model ? `<span class="tag">${esc(shortModel(s.model))}</span>` : ''}${s.ctx ? `<span class="tag" title="Context in use">${kTok(s.ctx)} ctx</span>` : ''}</div>
     ${last}${aliveHtml(s)}${linksHtml(s)}${treeHtml(s.sessionId)}${projTab(s)}</div>`;
@@ -65,7 +67,7 @@ function cardHtml(s) {
 const ALIVE_ICON = { ask: '?', block: '⛔', ship: '🚀', wip: '⏳', done: '✓' };
 function aliveHtml(s) {
   const a = s.phase === 'waiting' && s.alive; if (!a) return '';
-  return `<div class="alive t-${cls(a.tone)}" data-why="${esc(s.sessionId)}" title="Why it's still waiting: click for everything open">
+  return `<div class="alive t-${cls(a.tone)}" data-why="${esc(s.sessionId)}" tabindex="0" role="button" title="Why it's still waiting: click for everything open">
     <span class="ic">${ALIVE_ICON[a.tone] || '•'}</span><span class="tx">${esc(a.text)}</span>${a.more ? `<span class="more">+${a.more} more</span>` : ''}</div>`;
 }
 
@@ -82,7 +84,7 @@ function whyBtn(s) {
 // The Linear project hangs under the card like a tab; clicking it filters the board.
 function projTab(s) {
   const p = s.linear?.projects?.[0]; if (!p) return '';
-  return `<span class="ptab ${ui.filter === p.name ? 'on' : ''}" data-project="${esc(p.name)}" title="${esc(p.name)}\nClick to show only this project's sessions">◇ <span class="nm">${esc(p.name)}</span></span>`;
+  return `<span class="ptab ${ui.filter === p.name ? 'on' : ''}" data-project="${esc(p.name)}" tabindex="0" role="button" title="${esc(p.name)}\nClick to show only this project's sessions">◇ <span class="nm">${esc(p.name)}</span></span>`;
 }
 
 // Sessions started from this one (the app's linked sessions), drawn as a tree.
@@ -92,8 +94,8 @@ function treeHtml(sid, depth = 0) {
   if (!kids?.length || depth > 4) return '';
   return `<div class="tree">${kids.map((k) => {
     const open = cardPrs(k).shown.map(prChip).join('');
-    return `<div class="branch"><div class="node ${ui.selected === k.sessionId ? 'sel' : ''}" data-node="${esc(k.sessionId)}" title="${esc(k.summary || k.lastAssistant || k.title)}">
-      <span class="dot ${cls(k.phase)}"></span><span class="ntitle">${esc(k.title)}</span>${whyBtn(k)}${isUnread(k) ? '<span class="tag new">NEW</span>' : ''}${open}
+    return `<div class="branch"><div class="node ${ui.selected === k.sessionId ? 'sel' : ''}" data-node="${esc(k.sessionId)}" tabindex="0" role="group" aria-label="${esc(k.title)}, ${PHASE_LABEL[k.phase] || esc(k.phase)}" title="${esc(k.summary || k.lastAssistant || k.title)}">
+      <span class="dot ${cls(k.phase)}" role="img" aria-label="${PHASE_LABEL[k.phase] || esc(k.phase)}"></span><span class="ntitle">${esc(k.title)}</span>${whyBtn(k)}${isUnread(k) ? '<span class="tag new">NEW</span>' : ''}${open}
       <span class="age" data-ts="${esc(k.lastTs || '')}">${ago(k.lastTs)}</span></div>${treeHtml(k.sessionId, depth + 1)}</div>`;
   }).join('')}</div>`;
 }
@@ -124,9 +126,9 @@ export function prTip(p) {
   return [`${p.repo}#${p.number}${p.title ? ` — ${p.title}` : ''}`,
     [state, p.state === 'OPEN' && REVIEW[p.review], p.state === 'OPEN' && CHECKS[p.checks]].filter(Boolean).join(' · ')].join('\n');
 }
-const prChip = (p) => `<a class="prchip ${prClass(p)}" href="${esc(p.url)}" target="_blank" rel="noopener" title="${esc(prTip(p))}">${PR_ICON}#${esc(p.number)}</a>`;
+const prChip = (p) => `<a class="prchip ${prClass(p)}" href="${esc(p.url)}" target="_blank" rel="noopener" title="${esc(prTip(p))}" aria-label="${esc(prTip(p).replace(/\n/g, ', '))}">${PR_ICON}#${esc(p.number)}</a>`;
 const ticketChip = (t, full) => `<a class="lchip ${full ? '' : 'mini'}" href="${esc(t.url || '#')}" target="_blank" rel="noopener" title="${esc(ticketTip(t))}">
-  <span class="sdot ${stClass(t)}"></span><span class="id">${esc(t.id)}</span>${t.status ? `<span class="st">${esc(t.status)}</span>` : ''}${full && t.title ? `<span class="nm">· ${esc(t.title)}</span>` : ''}</a>`;
+  <span class="sdot ${stClass(t)}" aria-hidden="true"></span><span class="id">${esc(t.id)}</span>${t.status ? `<span class="st">${esc(t.status)}</span>` : ''}${full && t.title ? `<span class="nm">· ${esc(t.title)}</span>` : ''}</a>`;
 
 // Only PRs GitHub has answered for (so nothing flickers in and out while
 // loading): open ones first, otherwise the latest merged; the rest in a menu.
@@ -188,7 +190,7 @@ function linearTickets(s) {
     ? `<a class="lchip" href="${esc(p.url)}" target="_blank" rel="noopener">◇ ${esc(p.name)}${p.status ? ` · ${esc(p.status)}` : ''}</a>`
     : `<span class="lchip">◇ ${esc(p.name)}</span>`).join('');
   const rows = L.tickets.map((t) => `<a class="lrow" href="${esc(t.url || '#')}" target="_blank" rel="noopener" title="${esc(ticketTip(t))}">
-      <span class="lid"><span class="sdot ${stClass(t)}"></span>${esc(t.id)}</span>
+      <span class="lid"><span class="sdot ${stClass(t)}" role="img" aria-label="${esc(t.status || 'No status')}"></span>${esc(t.id)}</span>
       <span class="lt"><div>${esc(t.title || 'Not fetched from Linear yet')}</div>
         <div class="lm">${esc([t.status, t.priority && t.priority !== 'No priority' ? t.priority : '', t.assignee, t.project, t.labels?.length ? t.labels.join(', ') : ''].filter(Boolean).join(' · '))}</div></span></a>`).join('');
   return section('linear', `Linear <span class="cnt">${L.tickets.length}</span> ${head}`, rows);
@@ -246,5 +248,11 @@ document.querySelector('main').addEventListener('click', (e) => {
 });
 $('archBtn').onclick = () => { ui.showArchived = !ui.showArchived; renderBoard(); };
 document.querySelector('main').addEventListener('keydown', (e) => {
-  const c = e.target.closest('.card'); if (c && e.key === 'Enter') openSession(c.dataset.sid);
+  if (e.key !== 'Enter' && e.key !== ' ') return;
+  // Focusable pieces that aren't real buttons (the "why" line, a project tab) act on Enter and Space
+  // like buttons do.
+  if (e.target.matches?.('[role="button"]:not(button)')) { e.preventDefault(); e.target.click(); return; }
+  // A focused card or tree node opens its session. Buttons inside one (Reply, ?) keep their own Enter
+  // and Space: opening the session first would re-render the card and drop the button's click.
+  if (e.target.matches?.('.card, .node')) { e.preventDefault(); e.target.click(); }
 });

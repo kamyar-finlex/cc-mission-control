@@ -60,9 +60,9 @@ export function connect() {
     for (const s of d.upsert || []) byId.set(s.sessionId, s);
     onState([...byId.values()].sort(bySessionOrder));
   });
-  es.onopen = () => $('live').classList.add('on');
+  es.onopen = () => { $('live').classList.add('on'); $('live').setAttribute('aria-label', 'Live'); };
   es.onerror = async () => {
-    $('live').classList.remove('on');
+    $('live').classList.remove('on'); $('live').setAttribute('aria-label', 'Disconnected');
     // A browser that is no longer signed in would retry forever on a frozen board: say what to do instead.
     const r = await fetch('/api/whoami').catch(() => null);
     if (r?.status === 401) { es.close(); toast('Signed out of the console. Run  cc-mission-control open  in a terminal, then use the page it opens.', 600000); }

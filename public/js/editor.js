@@ -194,6 +194,7 @@ let qrSid = null;
 export function openQuickReply(sid, anchor) {
   const s = ui.sessions.find((x) => x.sessionId === sid); if (!s) return;
   const d = delivery(s);
+  if ($('qr').hidden) qrOpener = document.activeElement;
   qrSid = sid;
   $('qr-dot').className = `dot ${s.phase}`;
   $('qr-title').textContent = s.title;
@@ -206,6 +207,12 @@ export function openQuickReply(sid, anchor) {
   qr.style.left = `${Math.max(8, Math.min(r.left, innerWidth - w - 8))}px`;
   const ta = qr.querySelector('.mde-in'); ta.focus(); ta.setSelectionRange(ta.value.length, ta.value.length);
 }
-export function closeQuickReply() { $('qr').hidden = true; qrSid = null; }
+let qrOpener = null;
+export function closeQuickReply() {
+  const hadFocus = $('qr').contains(document.activeElement);
+  $('qr').hidden = true; qrSid = null;
+  if (hadFocus && qrOpener?.isConnected) qrOpener.focus(); // only when the reply box held the focus
+  qrOpener = null;
+}
 $('qr-close').onclick = closeQuickReply;
 document.addEventListener('mousedown', (e) => { if (!$('qr').hidden && !e.target.closest('#qr') && !e.target.closest('[data-quick]')) closeQuickReply(); });
