@@ -187,29 +187,38 @@ export function streamSession(req, res, sid) {
   const t = transcripts.get(sid);
   sse(res);
   if (!t) { send(res, 'backlog', []); return; }
-  let offset = 0, carry = '', closed = false;
-  (async () => {
-    const { text, size } = await readTail(t.file, 2 * 1024 * 1024);
-    offset = size;
-    send(res, 'backlog', parseLines(text, { images: true }).filter((e) => DISPLAY.has(e.kind)).slice(-300));
-  })().catch(() => send(res, 'backlog', []));
+  // offset: bytes read so far; carry: the bytes of a last line still being written (kept as bytes, so
+  // a read that ends inside a multi-byte character is joined correctly).
+  let offset = 0, carry = Buffer.alloc(0), closed = false, ready = false, busy = false;
+  const shown = (text) => parseLines(text, { images: true }).filter((e) => DISPLAY.has(e.kind));
+  // The latest part of the transcript; sent on open and again if the file is rewritten, which the
+  // page treats as a fresh start (so nothing shown twice).
+  const backlog = async () => {
+    const { text, complete } = await readTail(t.file, 2 * 1024 * 1024);
+    carry = Buffer.alloc(0);
+    offset = complete; // an unfinished last line is read again, whole, by the next poll
+    send(res, 'backlog', shown(text).slice(-300));
+  };
+  backlog().catch(() => send(res, 'backlog', [])).finally(() => { ready = true; });
   const timer = setInterval(async () => {
-    if (closed || !offset) return;
+    if (closed || !ready || busy) return;
+    busy = true;
     try {
       const st = await fsp.stat(t.file);
-      if (st.size < offset) offset = 0; // rewritten
+      if (st.size < offset) { await backlog(); return; } // rewritten
       if (st.size === offset) return;
       const fh = await fsp.open(t.file, 'r');
+      let bytesRead = 0;
       const buf = Buffer.alloc(st.size - offset);
-      await fh.read(buf, 0, buf.length, offset);
-      await fh.close();
-      offset = st.size;
-      const text = carry + buf.toString('utf8');
-      const cut = text.lastIndexOf('\n');
-      carry = text.slice(cut + 1);
-      const events = parseLines(text.slice(0, cut + 1), { images: true }).filter((e) => DISPLAY.has(e.kind));
+      try { ({ bytesRead } = await fh.read(buf, 0, buf.length, offset)); } finally { await fh.close(); }
+      offset += bytesRead;
+      const data = Buffer.concat([carry, buf.subarray(0, bytesRead)]);
+      const cut = data.lastIndexOf(0x0a) + 1;
+      carry = data.subarray(cut);
+      const events = shown(data.subarray(0, cut).toString('utf8'));
       if (events.length) send(res, 'append', events);
     } catch { /* transient */ }
+    finally { busy = false; }
   }, 700);
   req.on('close', () => { closed = true; clearInterval(timer); });
 }

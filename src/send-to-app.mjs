@@ -1,5 +1,6 @@
 import fsp from 'node:fs/promises';
 import { appFiles, appMeta } from './app-meta.mjs';
+import { clipboardCount, restoreClipboard, saveClipboard } from './clipboard.mjs';
 import { pipeTo, run, runOsa, sleep } from './proc.mjs';
 import { refreshTranscript, transcripts } from './transcript.mjs';
 
@@ -85,8 +86,11 @@ export async function sendToApp(s, text) {
   if (!text || text.length > 20000) return { ok: false, out: 'Write something (up to 20,000 characters).' };
   const status = await automationStatus();
   if (!status.ok) { sendLog(s.appId, `not allowed: ${status.why} ${status.out}`); return { ...status, ok: false, out: `Send to agent isn't allowed yet (${status.why}). Your reply was not sent.` }; }
-  const before = await pipeTo('pbpaste');
+  // The whole clipboard (images and files too), with plain text as the fallback.
+  const saved = await saveClipboard();
+  const before = saved ? null : await pipeTo('pbpaste');
   await pipeTo('pbcopy', text);
+  const ours = await clipboardCount();
   const t0 = Date.now();
   await run('open', [`claude://claude.ai/epitaxy/${s.appId}`]);
   // Wait until the app itself reports this exact session focused, with the app in front: either it
@@ -115,7 +119,11 @@ export async function sendToApp(s, text) {
   const seen = await seenInTranscript(s.sessionId, fromSize, probe.toLowerCase());
   sendLog(s.appId, `confirmed in transcript: ${seen}`);
   if (seen) {
-    setTimeout(() => { if (before.ok) pipeTo('pbcopy', before.out); }, 1500); // give your clipboard back
+    // Give your clipboard back, unless you copied something new in the meantime.
+    setTimeout(async () => {
+      if (saved) { await restoreClipboard(saved, { expectCount: ours }); return; }
+      if (before?.ok && (ours === null || (await clipboardCount()) === ours)) pipeTo('pbcopy', before.out);
+    }, 1500);
     return { ok: true, out: seen === 'queued' ? 'Sent ✓ The session is busy, so it is queued and runs next.' : 'Sent ✓ It arrived in the session.' };
   }
   return { ok: false, out: "Pasted and pressed Enter, but the reply didn't show up in the session within 8 seconds. Check the Claude app; your reply is still on the clipboard." };

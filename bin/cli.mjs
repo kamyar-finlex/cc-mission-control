@@ -231,9 +231,11 @@ function uninstall() {
   }
   else if (installed !== null) kept.push(`the /project-updates skill, which you changed: ${SKILL_DEST}`);
 
-  for (const [file, what] of [[LOG, 'its log'], [path.join(os.tmpdir(), 'cc-mission-control-tts'), 'its speech cache']]) {
-    if (fs.existsSync(file)) { fs.rmSync(file, { recursive: true, force: true }); removed.push(what); }
-  }
+  // The speech cache: in the data folder now, in the temp folder for installs from before that.
+  const caches = [path.join(DATA_DIR, 'tts'), path.join(os.tmpdir(), 'cc-mission-control-tts')].filter((d) => fs.existsSync(d));
+  for (const d of caches) fs.rmSync(d, { recursive: true, force: true });
+  if (fs.existsSync(LOG)) { fs.rmSync(LOG, { force: true }); removed.push('its log'); }
+  if (caches.length) removed.push('its speech cache');
   if (fs.existsSync(DATA_DIR)) {
     if (flag('purge')) { fs.rmSync(DATA_DIR, { recursive: true, force: true }); removed.push(`its saved data (${DATA_DIR})`); }
     else kept.push(`its saved data (archive list, stories, token, pasted images) in ${DATA_DIR}; run  cc-mission-control uninstall --purge  to delete it`);
