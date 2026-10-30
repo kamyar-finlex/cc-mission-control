@@ -78,6 +78,15 @@ test('ordinary HTML in a message is not a notice; other dashed tags get a plain 
   assert.equal(noticeLine('plain words, no notice'), 'plain words, no notice');
 });
 
+test('tags the user merely mentions stay part of their message', () => {
+  const said = 'replace <my-button> with the new one, and also check the header';
+  assert.deepEqual(splitNotices(said), [{ type: 'text', text: said }], 'an unclosed made-up tag is text');
+  const asked = 'why does <task-notification> show as text? and `<scheduled-task>` too';
+  assert.deepEqual(splitNotices(asked), [{ type: 'text', text: asked }], 'a notice named mid-sentence is text');
+  const later = `${asked}\n${TASK}`;
+  assert.deepEqual(splitNotices(later).map((s) => s.type), ['text', 'notice'], 'a real notice on its own line still counts');
+});
+
 test('nothing from a notice reaches the page unescaped', () => {
   const evil = '<task-notification><status>completed" onmouseover="x</status><summary><img src=x onerror=alert(1)></summary><output-file>"><script>1</script></output-file></task-notification>';
   const out = html(evil);

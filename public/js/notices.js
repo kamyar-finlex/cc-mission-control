@@ -18,10 +18,18 @@ const fieldsOf = (body) => Object.fromEntries([...body.matchAll(FIELD)].map(([, 
 // [{ type: 'text', text } | { type: 'notice', tag, attrs, body, closed } | { type: 'command', name, args }
 //  | { type: 'shell', input, stdout, stderr }]. A tag cut off by the transcript's length limit still
 // becomes a notice (closed: false).
+const KNOWN_TAG = new RegExp(`^(${KNOWN})$`);
 export function splitNotices(text) {
+  text = String(text ?? '');
   const out = [];
   let last = 0;
-  for (const m of String(text ?? '').matchAll(BLOCK)) {
+  const re = new RegExp(BLOCK.source, 'g');
+  for (let m; (m = re.exec(text));) {
+    // A real notice starts a line, or follows the previous one directly (<bash-input>…</bash-input><bash-stdout>);
+    // a tag named mid-sentence or in inline code is the user's text. Only known notices may run to the end
+    // unclosed (the transcript's length limit cut them); any other tag needs its closing tag.
+    const atLineStart = /(^|\n)[ \t]*$/.test(text.slice(Math.max(0, m.index - 200), m.index));
+    if ((!atLineStart && m.index !== last) || (!m[4] && !KNOWN_TAG.test(m[1]))) { re.lastIndex = m.index + 1; continue; }
     if (m.index > last) out.push({ type: 'text', text: text.slice(last, m.index) });
     out.push({ type: 'notice', tag: m[1], attrs: attrsOf(m[2]), body: m[3], closed: !!m[4] });
     last = m.index + m[0].length;
