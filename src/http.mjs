@@ -103,7 +103,7 @@ async function handle(req, res) {
   if (req.method === 'GET' && m) { streamSession(req, res, m[1]); return; }
 
   if (req.method === 'GET' && p === '/api/whoami') { res.writeHead(204).end(); return; }
-  if (req.method === 'GET' && p === '/api/digest') { json(res, digest(url.searchParams.get('range') || 'today')); return; }
+  if (req.method === 'GET' && p === '/api/digest') { json(res, digest(state.sessions, url.searchParams.get('range') || 'today')); return; }
   const img = p.match(/^\/api\/images\/([0-9a-f]{20})$/);
   if (req.method === 'GET' && img) {
     const im = images.get(img[1]);

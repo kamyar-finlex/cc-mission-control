@@ -1,6 +1,5 @@
 import { linearScans } from './linear.mjs';
 import { run } from './proc.mjs';
-import { state } from './state.mjs';
 
 // Pull requests (read-only GitHub lookups via the gh CLI).
 
@@ -22,13 +21,13 @@ export function prsFor(sid) {
 }
 
 let prBusy = false;
-export async function prTick() {
+export async function prTick(sessions) {
   if (prBusy) return;
   prBusy = true;
   try {
     const now = Date.now();
     const due = new Set();
-    for (const s of state.sessions) for (const p of prsFor(s.sessionId)) {
+    for (const s of sessions) for (const p of prsFor(s.sessionId)) {
       const known = prState.get(p.key);
       const maxAge = !known ? 0 : known.state === 'OPEN' ? 90e3 : 30 * 60e3; // merged/closed rarely change
       if (!known || now - known.fetchedAt > maxAge) due.add(p.key);

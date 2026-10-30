@@ -43,8 +43,8 @@ test('aliveReason: the strongest reason, in order', () => {
   assert.deepEqual(reason({ prs: [{ state: 'OPEN', number: 3, review: 'APPROVED' }] }), { tone: 'ship', text: 'PR #3 is approved. Merge me.' });
   assert.equal(reason({ prs: [{ state: 'OPEN', number: 3, isDraft: true }] }).tone, 'done', 'a draft alone keeps nothing alive');
   assert.deepEqual(reason({}, [{ kind: 'note', text: 'This waits on the API team.' }]), { tone: 'block', text: 'Blocked: This waits on the API team.' });
-  // Current behaviour, likely unintended: "waiting on" is not read as blocked (only "waits on"/"wait on").
-  assert.deepEqual(reason({}, [{ kind: 'note', text: 'Waiting on the API team.' }]), { tone: 'wip', text: 'Waiting on the API team.' });
+  assert.deepEqual(reason({}, [{ kind: 'note', text: 'Waiting on the API team.' }]), { tone: 'block', text: 'Blocked: Waiting on the API team.' });
+  assert.deepEqual(reason({}, [{ kind: 'note', text: 'Still waiting for CI to finish.' }]).tone, 'block');
   assert.deepEqual(reason({}, [{ kind: 'note', text: 'Needs a deploy to prod.' }]), { tone: 'ship', text: 'Not shipped yet: Needs a deploy to prod.' });
   assert.deepEqual(reason({}, [{ kind: 'note', text: 'The fix is not verified.' }]), { tone: 'wip', text: 'Not verified yet: The fix is not verified.' });
   assert.deepEqual(reason({ linear: { tickets: [{ id: 'A-1', status: 'In Review', statusType: 'started' }] } }), { tone: 'wip', text: "A-1 is still In Review. Don't archive me." });

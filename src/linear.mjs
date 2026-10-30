@@ -1,5 +1,4 @@
 import fs from 'node:fs';
-import { state } from './state.mjs';
 import { clip, resultText, stripReminders, transcripts } from './transcript.mjs';
 
 // Linear tickets and projects, learned from the Linear tool replies already in transcripts.
@@ -52,7 +51,7 @@ function learn(o, depth = 0) {
 
 function mentions(text, st, weight) {
   for (const [, p, n] of text.matchAll(ISSUE_ID)) ref(st, `${p}-${n}`, weight);
-  for (const [, id] of text.matchAll(ISSUE_URL)) { const up = id.toUpperCase(); ref(st, up, weight + 1); addTo(teamKeys, up.split('-')[0]); }
+  for (const [, id] of text.matchAll(ISSUE_URL)) { const up = id.toUpperCase(); ref(st, up, weight + 1); st.strong.add(up); addTo(teamKeys, up.split('-')[0]); }
 }
 // Scores a ticket mention and remembers when the session last touched it.
 function ref(st, id, weight) {
@@ -90,7 +89,7 @@ function storyLine(d, st) {
   }
 }
 
-function linearLine(line, st) {
+export function linearLine(line, st) {
   const storyish = line.includes('wrap_up') || line.includes('isCompactSummary') || (line.includes('"type":"user"') && !line.includes('"tool_result"'));
   if (!storyish && !/[A-Z]{2}-\d|linear|\/pull\//.test(line)) return;
   let d;
@@ -120,7 +119,7 @@ function linearLine(line, st) {
         st.pending.set(b.id, b.name);
         const i = b.input || {};
         const w = b.name.endsWith('save_issue') ? 8 : 5;
-        for (const v of [i.id, i.issueId, i.parentId]) if (typeof v === 'string' && IS_ISSUE_ID.test(v)) ref(st, v, v === i.parentId ? 2 : w);
+        for (const v of [i.id, i.issueId, i.parentId]) if (typeof v === 'string' && IS_ISSUE_ID.test(v)) { ref(st, v, v === i.parentId ? 2 : w); if (v !== i.parentId) st.strong.add(v); }
         if (typeof i.project === 'string') bump(st.projects, i.project, 3);
         if (b.name.endsWith('_project') && typeof i.query === 'string') bump(st.projects, i.query, 3);
       }
@@ -128,14 +127,17 @@ function linearLine(line, st) {
   }
 }
 
+// One session's scan state. `strong` holds ids with more than a mention behind them: a Linear
+// tool call on the ticket or a link to it.
+export const newScan = () => ({ offset: 0, carry: '', pending: new Map(), prCreates: new Set(), refs: new Map(), strong: new Set(), projects: new Map(), prs: new Map(), refsAt: new Map(), story: { asks: [], recaps: [], compacts: [] } });
+
 // Reads only the bytes appended since the last scan.
 async function scanLinear(sid) {
   const t = transcripts.get(sid);
   if (!t) return;
   let st = linearScans.get(sid);
-  const fresh = () => ({ offset: 0, carry: '', pending: new Map(), prCreates: new Set(), refs: new Map(), projects: new Map(), prs: new Map(), refsAt: new Map(), story: { asks: [], recaps: [], compacts: [] } });
-  if (!st) linearScans.set(sid, (st = fresh()));
-  if (t.size < st.offset) Object.assign(st, fresh()); // rewritten
+  if (!st) linearScans.set(sid, (st = newScan()));
+  if (t.size < st.offset) Object.assign(st, newScan()); // rewritten
   if (t.size === st.offset) return;
   const end = t.size;
   const stream = fs.createReadStream(t.file, { start: st.offset, end: end - 1, encoding: 'utf8' });
@@ -148,28 +150,35 @@ async function scanLinear(sid) {
 }
 
 let linearBusy = false;
-export async function linearTick() {
+export async function linearTick(sessions) {
   if (linearBusy) return;
   linearBusy = true;
-  try { for (const s of state.sessions) await scanLinear(s.sessionId); }
+  try { for (const s of sessions) await scanLinear(s.sessionId); }
   catch (e) { console.error('linear scan failed', e); }
   finally { linearBusy = false; }
 }
 
+// Names of standards and algorithms that look like ticket ids. When a team's key matches one
+// (a SHA team has a real SHA-256), a bare mention is still the algorithm: it only counts as a
+// ticket with more behind it (the branch, a Linear tool call or link). Not the title: without a
+// custom name, a session's title is just its first message.
+const LOOKS_LIKE_A_STANDARD = /^(SHA-(1|2|3|224|256|384|512)|UTF-(7|8|16|32)|MD-[245]|ISO-(639|3166|4217|8601|9001|27001)|RFC-(2119|3339|4122|5322|6749|7519|8259|9110)|AES-(128|192|256)|RSA-(1024|2048|3072|4096)|X-509|PEP-\d{1,4}|CP-125\d|ES-(256|384|512)|HS-(256|384|512)|RS-(256|384|512)|P-(256|384|521))$/;
+
 // Strongest signals first: the git branch / worktree, then the title, then
 // Linear tool calls, then ids the user typed. Only confirmed team keys count,
-// so strings like UTF-8 or SHA-256 never become tickets.
+// so strings like UTF-8 never become tickets for a workspace without a UTF team.
 export function linearFor(sid, { title, branch, worktree }) {
   const st = linearScans.get(sid);
   const score = new Map(st?.refs);
   const onBranch = new Set();
   for (const [, p, n] of `${branch || ''} ${worktree || ''}`.toUpperCase().matchAll(ISSUE_ID)) { bump(score, `${p}-${n}`, 100); onBranch.add(`${p}-${n}`); }
   for (const [, p, n] of (title || '').matchAll(ISSUE_ID)) bump(score, `${p}-${n}`, 50);
+  const evidence = (id) => !LOOKS_LIKE_A_STANDARD.test(id) || onBranch.has(id) || st?.strong.has(id);
   // The ten most relevant tickets, newest first: the branch's ticket is the
   // current task, then the one the session touched last.
   const lastAt = (id) => (onBranch.has(id) ? Infinity : st?.refsAt.get(id) || 0);
   const tickets = [...score]
-    .filter(([id, n]) => n >= 3 && teamKeys.has(id.split('-')[0]))
+    .filter(([id, n]) => n >= 3 && teamKeys.has(id.split('-')[0]) && evidence(id))
     .sort((a, b) => b[1] - a[1])
     .slice(0, 10)
     .sort((a, b) => lastAt(b[0]) - lastAt(a[0]) || b[1] - a[1])
