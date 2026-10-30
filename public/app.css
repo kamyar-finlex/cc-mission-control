@@ -401,3 +401,33 @@ kbd { font-family: var(--mono); font-size: 11px; border: 1px solid var(--line); 
   #search { width: 100%; }
   header { padding: 10px 16px; }
 }
+
+/* Notices: what Claude Code or the app put into a session (a task finished, a scheduled run, a command). */
+.ev.notice-row { align-self: stretch; display: flex; flex-direction: column; gap: 6px; max-width: 100%; }
+.ev.notice-row > .ts { align-self: flex-end; }
+.notice { border: 1px solid var(--line); background: var(--panel-2); border-radius: 10px; padding: 8px 12px; font-size: 13px; line-height: 1.45; color: var(--text); }
+.ev.user .notice { background: var(--panel); margin: 8px 0; }
+.ev.user .notice:first-child { margin-top: 0; }
+.ev.user .notice:last-child { margin-bottom: 0; }
+.notice .nhead { display: flex; align-items: baseline; gap: 8px; flex-wrap: wrap; }
+.notice .nicon { width: 18px; flex: none; text-align: center; color: var(--muted); }
+.notice .nlabel { color: var(--muted); font-size: 12px; flex: none; }
+.notice .ntitle { flex: 1; min-width: 0; font-weight: 600; overflow-wrap: anywhere; }
+.notice .nchip { margin-left: auto; flex: none; font-size: 11px; font-family: var(--mono); border: 1px solid currentColor; border-radius: 6px; padding: 0 6px; color: var(--muted); }
+.notice code { font-family: var(--mono); font-size: 12px; overflow-wrap: anywhere; }
+.ntask.t-ok .nicon, .ntask.t-ok .nchip { color: var(--ok); }
+.ntask.t-bad { border-color: var(--err); }
+.ntask.t-bad .nicon, .ntask.t-bad .nchip { color: var(--err); }
+.ntask.t-run .nicon, .ntask.t-run .nchip { color: var(--st-started); }
+.nfold { margin-top: 6px; }
+.nfold > summary { cursor: pointer; color: var(--muted); font-size: 12px; user-select: none; width: fit-content; }
+.nfold > summary:hover { color: var(--text); }
+.npaste > .nfold { margin-top: 0; }
+.nrows { display: grid; grid-template-columns: max-content 1fr; gap: 2px 12px; margin: 6px 0 0; font-size: 12px; }
+.nrows dt { color: var(--muted); }
+.nrows dd { margin: 0; font-family: var(--mono); overflow-wrap: anywhere; }
+.npre { margin: 6px 0 0; padding: 8px 10px; background: var(--panel); border: 1px solid var(--line); border-radius: 8px; font-family: var(--mono); font-size: 12px; line-height: 1.45; white-space: pre-wrap; overflow-wrap: anywhere; max-height: 320px; overflow: auto; }
+.npre.err { color: var(--err); }
+.nmd { margin-top: 6px; font-size: 13px; }
+.nmd > :last-child { margin-bottom: 0; }
+.ncut { margin-top: 4px; color: var(--muted); font-size: 11.5px; font-style: italic; }

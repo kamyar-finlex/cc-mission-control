@@ -3,6 +3,7 @@ import { linearPanel, miniPanel, renderBoard, writingStory } from './board.js';
 import { $, action, isArchived, seen, setHtml, store, toast, ui } from './core.js';
 import { delivery, editorHtml, openQuickReply } from './editor.js';
 import { md } from './markdown.js';
+import { noticesHtml, onlyNotices, splitNotices } from './notices.js';
 import { openStory, renderStory, storySid } from './story.js';
 import { esc, kTok, kindLabel, shortModel } from './util.js';
 import { openWhy } from './why.js';
@@ -76,7 +77,13 @@ const tstr = (ts) => (ts ? new Date(ts).toLocaleTimeString([], { hour: '2-digit'
 const thumbs = (hashes, alt) => (hashes || []).map((h) => `<img class="thumb" src="/api/images/${esc(h)}" alt="${esc(alt)}" loading="lazy">`).join('');
 
 function evHtml(e) {
-  if (e.kind === 'user') return `<div class="ev user md">${e.text ? md(e.text) : ''}${e.images?.length ? `<div class="thumbs">${thumbs(e.images, 'image you sent')}</div>` : ''}</div>`;
+  if (e.kind === 'user') {
+    // A message made only of notices (a task finished, a scheduled run, a command) is not the user
+    // speaking: it gets a row of its own. Notices inside what the user wrote stay in their bubble.
+    const segs = splitNotices(e.text || '');
+    if (onlyNotices(segs) && !e.images?.length) return `<div class="ev notice-row">${noticesHtml(segs, md)}<div class="ts">${tstr(e.ts)}</div></div>`;
+    return `<div class="ev user md">${e.text ? noticesHtml(segs, md) : ''}${e.images?.length ? `<div class="thumbs">${thumbs(e.images, 'image you sent')}</div>` : ''}</div>`;
+  }
   if (e.kind === 'assistant') return `<div class="ev assistant"><span class="av" aria-hidden="true">✳</span><div class="abody md">${md(e.text)}<div class="ts">${tstr(e.ts)}</div></div></div>`;
   return '';
 }
