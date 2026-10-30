@@ -100,6 +100,9 @@ function enrich(s) {
       if (m.needsAction) s.needsAction = m.needsAction;
       if (m.parentAppId) s.parentId = appIdToCli.get(m.parentAppId);
       if (m.archived) s.appArchived = true;
+      // Runs of a scheduled task. Numbered copies of one task (autopilot-agent, -2, -3) are slots of
+      // one schedule, so the board groups them under one family.
+      if (m.scheduledTaskId) s.schedule = { id: m.scheduledTaskId, family: m.scheduledTaskId.replace(/-\d+$/, '') };
     }
     if (consoleArchive.has(s.sessionId)) s.archived = true;
     s.linear = linearFor(s.sessionId, s);

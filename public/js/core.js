@@ -28,7 +28,7 @@ export const isUnread = (s) => s.phase === 'waiting' && s.lastTs && s.lastTs > (
 
 // Replace markup only when it changed, so live updates don't swallow clicks.
 // The keyboard focus survives: if it was inside, the matching element in the new markup gets it back.
-const FOCUS_KEYS = ['data-sid', 'data-node', 'data-why', 'data-project', 'data-quick', 'data-prs', 'data-tickets'];
+const FOCUS_KEYS = ['data-sid', 'data-node', 'data-why', 'data-project', 'data-quick', 'data-prs', 'data-tickets', 'data-sgroup'];
 export function setHtml(el, html) {
   if (el._html === html) return;
   const f = el.contains(document.activeElement) ? document.activeElement : null;

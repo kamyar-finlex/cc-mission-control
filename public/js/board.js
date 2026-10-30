@@ -6,6 +6,7 @@ import { hideMenu, prItem, showMenu, ticketItem } from './menu.js';
 import { renderUsage } from './usage.js';
 import { ago, cls, esc, kTok, kindLabel, shortModel } from './util.js';
 import { openWhy } from './why.js';
+import { groupRuns } from './schedules.js';
 
 // The board: time ranges, filtering, cards and their chips, and the columns they sit in.
 
@@ -85,6 +86,25 @@ function whyBtn(s) {
 function projTab(s) {
   const p = s.linear?.projects?.[0]; if (!p) return '';
   return `<span class="ptab ${ui.filter === p.name ? 'on' : ''}" data-project="${esc(p.name)}" tabindex="0" role="button" title="${esc(p.name)}\nClick to show only this project's sessions">◇ <span class="nm">${esc(p.name)}</span></span>`;
+}
+
+// All runs of one schedule in a column: a header, the newest run's card, and the rest folded below
+// as rows (open one to see it). Which groups are unfolded is remembered per schedule and column.
+const openGroups = new Set(store.get('openGroups', []));
+const GROUP_ROWS = 50;
+function groupHtml(g, col) {
+  const key = `${col}:${g.family}`;
+  const open = openGroups.has(key);
+  const n = g.rest.length;
+  const rows = open ? g.rest.slice(0, GROUP_ROWS).map((k) => `<div class="node ${ui.selected === k.sessionId ? 'sel' : ''}" data-node="${esc(k.sessionId)}" tabindex="0" role="group" aria-label="${esc(k.title)}, ${PHASE_LABEL[k.phase] || esc(k.phase)}" title="${esc(k.summary || k.lastAssistant || k.title)}">
+      <span class="dot ${cls(k.phase)}" role="img" aria-label="${PHASE_LABEL[k.phase] || esc(k.phase)}"></span><span class="ntitle">${esc(k.title)}</span><span class="nlast">${esc(k.summary || k.lastAssistant || '')}</span>${isUnread(k) ? '<span class="tag new">NEW</span>' : ''}<span class="age" data-ts="${esc(k.lastTs || '')}">${ago(k.lastTs)}</span></div>`).join('')
+    + (n > GROUP_ROWS ? `<div class="smore">${n - GROUP_ROWS} older runs not shown: pick a shorter time range</div>` : '') : '';
+  return `<div class="sgroup" data-family="${esc(g.family)}">
+    <div class="shead"><span class="sicon" aria-hidden="true">⏰</span><span class="sname" title="Scheduled task${g.slots > 1 ? 's' : ''}: ${esc(g.family)}${g.slots > 1 ? ` (${g.slots} slots)` : ''}">${esc(g.name)}</span>
+      <span class="scount">${n + 1} runs${g.slots > 1 ? ` · ${g.slots} slots` : ''}</span>${g.unread ? `<span class="tag new">${g.unread} new</span>` : ''}</div>
+    ${cardHtml(g.lead)}
+    <button class="sfold" data-sgroup="${esc(key)}" aria-expanded="${open}">${open ? 'Hide' : 'Show'} ${n} earlier run${n === 1 ? '' : 's'}</button>
+    ${open ? `<div class="sruns">${rows}</div>` : ''}</div>`;
 }
 
 // Sessions started from this one (the app's linked sessions), drawn as a tree.
@@ -213,7 +233,7 @@ export function renderBoard() {
   // A brand-new machine has no sessions yet: say how to get some instead of showing three blank columns.
   if (!ui.sessions.length) empty.working = 'No Claude Code sessions on this Mac yet. Start one in the Claude app’s Code tab, or run <code>claude</code> in a terminal: it shows up here within a second.';
   for (const k of Object.keys(cols)) {
-    setHtml($(`col-${k}`), cols[k].length ? cols[k].map(cardHtml).join('') : `<div class="empty">${empty[k]}</div>`);
+    setHtml($(`col-${k}`), cols[k].length ? groupRuns(cols[k], { isUnread }).map((x) => (x.type === 'group' ? groupHtml(x, k) : cardHtml(x.s))).join('') : `<div class="empty">${empty[k]}</div>`);
     $(`n-${k}`).textContent = cols[k].length;
   }
   const unread = v.filter(isUnread).length;
@@ -226,6 +246,14 @@ export function renderBoard() {
 
 document.querySelector('main').addEventListener('click', (e) => {
   if (e.target.closest('a')) return; // Linear link opens in a new tab
+  const fold = e.target.closest('[data-sgroup]');
+  if (fold) {
+    const key = fold.dataset.sgroup;
+    if (openGroups.has(key)) openGroups.delete(key); else openGroups.add(key);
+    store.set('openGroups', [...openGroups]);
+    renderBoard();
+    return;
+  }
   const why = e.target.closest('[data-why]'); if (why) { openWhy(why.dataset.why); return; }
   const quick = e.target.closest('[data-quick]'); if (quick) { openQuickReply(quick.dataset.quick, quick.closest('.card')); return; }
   const more = e.target.closest('.prmore');
