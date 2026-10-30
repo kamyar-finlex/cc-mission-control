@@ -15,7 +15,7 @@ test('slots of one schedule become one group, in the newest run\'s place', () =>
   ];
   const out = groupRuns(col);
   assert.deepEqual(shape(out), ['autopilot-agent[a1+a2,a3]', 'mine']);
-  assert.equal(out[0].name, 'Autopilot agent');
+  assert.equal(out[0].name, 'Autopilot agent', 'named after the schedule, not the newest run');
   assert.equal(out[0].slots, 3);
 });
 
@@ -37,4 +37,13 @@ test('the group counts its new runs and its slots', () => {
   assert.equal(g.unread, 2);
   assert.equal(g.slots, 2);
   assert.equal(g.rest.length, 2);
+});
+
+test('a run that needs the user keeps its own card; the name comes from the schedule', () => {
+  const asks = { ...run('q', 'autopilot-agent-2'), story: { waitingOn: { ask: 'Force-push?' } } };
+  const col = [run('a1', 'autopilot-agent', 'waiting', 'Autopilot · SHA-132 renamed run'), asks, run('a2', 'autopilot-agent-3')];
+  const needsYou = (s) => !!s.story?.waitingOn?.ask;
+  const out = groupRuns(col, { standsOut: needsYou });
+  assert.deepEqual(shape(out), ['autopilot-agent[a1+a2]', 'q']);
+  assert.equal(out[0].name, 'Autopilot agent');
 });

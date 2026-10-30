@@ -91,6 +91,8 @@ function projTab(s) {
 // All runs of one schedule in a column: a header, the newest run's card, and the rest folded below
 // as rows (open one to see it). Which groups are unfolded is remembered per schedule and column.
 const openGroups = new Set(store.get('openGroups', []));
+// A run that asks the user something, or is blocked, keeps its own card instead of being folded away.
+const standsOut = (s) => !!s.story?.waitingOn?.ask || s.alive?.tone === 'ask' || s.alive?.tone === 'block';
 const GROUP_ROWS = 50;
 function groupHtml(g, col) {
   const key = `${col}:${g.family}`;
@@ -233,7 +235,7 @@ export function renderBoard() {
   // A brand-new machine has no sessions yet: say how to get some instead of showing three blank columns.
   if (!ui.sessions.length) empty.working = 'No Claude Code sessions on this Mac yet. Start one in the Claude app’s Code tab, or run <code>claude</code> in a terminal: it shows up here within a second.';
   for (const k of Object.keys(cols)) {
-    setHtml($(`col-${k}`), cols[k].length ? groupRuns(cols[k], { isUnread }).map((x) => (x.type === 'group' ? groupHtml(x, k) : cardHtml(x.s))).join('') : `<div class="empty">${empty[k]}</div>`);
+    setHtml($(`col-${k}`), cols[k].length ? groupRuns(cols[k], { isUnread, standsOut }).map((x) => (x.type === 'group' ? groupHtml(x, k) : cardHtml(x.s))).join('') : `<div class="empty">${empty[k]}</div>`);
     $(`n-${k}`).textContent = cols[k].length;
   }
   const unread = v.filter(isUnread).length;
