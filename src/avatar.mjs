@@ -4,7 +4,7 @@ import fs from 'node:fs';
 import fsp from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
-import { ROOT } from './config.mjs';
+import { DATA_DIR, ROOT } from './config.mjs';
 
 // The optional talking avatar: a local text-to-speech worker and the face's mouth bank.
 // A talking face that reads replies aloud, all local: a mouth bank built once by avatar/bank_build.py
@@ -12,13 +12,42 @@ import { ROOT } from './config.mjs';
 
 export const AVATAR_DIR = process.env.CCMC_AVATAR_DIR || path.join(os.homedir(), '.local', 'share', 'presenter-film', 'avatar', 'clara');
 const KOKORO_PY = process.env.CCMC_KOKORO_PYTHON || path.join(os.homedir(), '.local', 'share', 'presenter-film', 'venvs', 'kokoro', 'bin', 'python');
-const TTS_DIR = path.join(os.tmpdir(), 'cc-mission-control-tts');
+// Cached speech lives in the owner-only data folder (a shared temp folder would let other users plant
+// files), and is pruned whenever the worker starts.
+export const TTS_DIR = path.join(DATA_DIR, 'tts');
+const TTS_KEEP_DAYS = 7;
+const TTS_KEEP_FILES = 500;
 let tts = null;
 
-export function ttsWorker() {
+export function pruneSpeechCache(dir = TTS_DIR, now = Date.now()) {
+  let files = [];
+  try { files = fs.readdirSync(dir).map((f) => { const p = path.join(dir, f); return { p, f, t: fs.statSync(p).mtimeMs }; }); } catch { return 0; }
+  const old = (x) => x.f.endsWith('.tmp.wav') || now - x.t > TTS_KEEP_DAYS * 864e5;
+  const keep = files.filter((x) => !old(x)).sort((a, b) => b.t - a.t);
+  const gone = [...files.filter(old), ...keep.slice(TTS_KEEP_FILES)];
+  for (const x of gone) fs.rmSync(x.p, { force: true });
+  return gone.length;
+}
+
+export function ttsWorker(voice = 'bf_emma') {
   if (tts) return tts;
-  fs.mkdirSync(TTS_DIR, { recursive: true });
-  const child = spawn(KOKORO_PY, ['-I', path.join(ROOT, 'avatar', 'tts_worker.py')], { stdio: ['pipe', 'pipe', 'ignore'] });
+  fs.mkdirSync(TTS_DIR, { recursive: true, mode: 0o700 });
+  pruneSpeechCache();
+  const child = spawn(KOKORO_PY, ['-I', path.join(ROOT, 'avatar', 'tts_worker.py'), voice], { stdio: ['pipe', 'pipe', 'pipe'] });
+  // The worker's errors (a missing package, a model it can't load) go to this server's log, capped so a
+  // broken install can't fill it.
+  let logged = 0;
+  let partial = '';
+  child.stderr.on('data', (d) => {
+    const lines = (partial + d).split('\n');
+    partial = lines.pop(); // a line cut between two chunks waits for its end
+    for (const line of lines) {
+      if (!line.trim()) continue;
+      if (logged < 200) console.error(`[voice] ${line}`);
+      else if (logged === 200) console.error('[voice] (more output not logged)');
+      logged++;
+    }
+  });
   const waiting = new Map();
   let buf = '';
   let ready;
@@ -54,7 +83,7 @@ export async function speakToFile(text, voice) {
   const key = crypto.createHash('sha1').update(`${voice}|${text}`).digest('hex').slice(0, 20);
   const out = path.join(TTS_DIR, `${key}.wav`);
   if (fs.existsSync(out)) return { ok: true, out };
-  const w = ttsWorker();
+  const w = ttsWorker(voice);
   await w.ready;
   if (!w.alive) return { ok: false, error: 'the voice did not start' };
   const id = w.next++;

@@ -142,7 +142,7 @@ async function handle(req, res) {
   if (p === '/api/avatar/speak' || p === '/api/avatar/warm') {
     const man = await avatarManifest();
     if (!man) { res.writeHead(404).end('no avatar bank'); return; }
-    if (p === '/api/avatar/warm') { ttsWorker(); res.writeHead(204).end(); return; }
+    if (p === '/api/avatar/warm') { ttsWorker(man.voice || 'bf_emma'); res.writeHead(204).end(); return; }
     const text = String((await readJson(req, 1e5)).text || '').slice(0, 800).trim();
     if (!text) { res.writeHead(400).end('no text'); return; }
     const r = await speakToFile(text, man.voice || 'bf_emma');

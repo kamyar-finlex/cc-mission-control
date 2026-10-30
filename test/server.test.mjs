@@ -12,6 +12,9 @@ import { fileURLToPath } from 'node:url';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const SID = '11111111-2222-3333-4444-555555555555';
+const SID_EMPTY = '22222222-2222-3333-4444-555555555555';
+const SID_SPLIT = '33333333-2222-3333-4444-555555555555';
+const SID_REWRITE = '44444444-2222-3333-4444-555555555555';
 const PNG = 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII=';
 const HTML = Buffer.from('<script>alert(1)</script>').toString('base64');
 
@@ -19,6 +22,9 @@ const HTML = Buffer.from('<script>alert(1)</script>').toString('base64');
 const test = (name, fn) => nodeTest(name, { timeout: 15000 }, fn);
 
 let serverErrors = '';
+const userLine = (text) => JSON.stringify({ type: 'user', timestamp: new Date().toISOString(), message: { content: text } });
+const transcriptFile = (sid) => path.join(home, '.claude', 'projects', '-work', `${sid}.jsonl`);
+const texts = (events, name) => events.filter((e) => e.event === name).flatMap((e) => e.data.map((x) => x.text));
 let home, dataDir, work, stubOut, server, port, token, cookie;
 
 const freePort = () => new Promise((resolve) => {
@@ -84,6 +90,9 @@ before(async () => {
   const proj = path.join(home, '.claude', 'projects', '-work');
   fs.mkdirSync(proj, { recursive: true });
   fs.writeFileSync(path.join(proj, `${SID}.jsonl`), lines.map((l) => JSON.stringify(l)).join('\n') + '\n');
+  fs.writeFileSync(path.join(proj, `${SID_EMPTY}.jsonl`), '');
+  fs.writeFileSync(path.join(proj, `${SID_SPLIT}.jsonl`), userLine('first') + '\n');
+  fs.writeFileSync(path.join(proj, `${SID_REWRITE}.jsonl`), userLine('old one') + '\n' + userLine('old two') + '\n');
 
   port = await freePort();
   server = spawn(process.execPath, [path.join(ROOT, 'server.mjs')], {
@@ -265,6 +274,38 @@ test('pages get the whole board once, then patches with only what changed', asyn
 test('the data folder and token are owner-only', () => {
   assert.equal(fs.statSync(dataDir).mode & 0o777, 0o700);
   assert.equal(fs.statSync(path.join(dataDir, 'token')).mode & 0o777, 0o600);
+});
+
+test('a transcript that was empty when opened still streams what is added', async () => {
+  const done = sseUntil(`/api/sessions/${SID_EMPTY}/stream`, (ev) => texts(ev, 'append').includes('hello later'));
+  await new Promise((r) => setTimeout(r, 400));
+  fs.appendFileSync(transcriptFile(SID_EMPTY), userLine('hello later') + '\n');
+  const events = await done;
+  assert.deepEqual(texts(events, 'backlog'), []);
+  assert.deepEqual(texts(events, 'append'), ['hello later']);
+});
+
+test('a line written in parts, split inside a multi-byte character, arrives whole', async () => {
+  const line = Buffer.from(userLine('Grüße 🎉 done') + '\n');
+  const cut = line.indexOf(Buffer.from('🎉')) + 2; // inside the emoji's four bytes
+  const done = sseUntil(`/api/sessions/${SID_SPLIT}/stream`, (ev) => texts(ev, 'append').length > 0);
+  await new Promise((r) => setTimeout(r, 400));
+  fs.appendFileSync(transcriptFile(SID_SPLIT), line.subarray(0, cut));
+  await new Promise((r) => setTimeout(r, 1600)); // at least one poll reads the first part alone
+  fs.appendFileSync(transcriptFile(SID_SPLIT), line.subarray(cut));
+  const events = await done;
+  assert.deepEqual(texts(events, 'backlog'), ['first']);
+  assert.deepEqual(texts(events, 'append'), ['Grüße 🎉 done']);
+});
+
+test('a transcript rewritten while open starts over instead of repeating', async () => {
+  const done = sseUntil(`/api/sessions/${SID_REWRITE}/stream`, (ev) => ev.filter((e) => e.event === 'backlog').length === 2);
+  await new Promise((r) => setTimeout(r, 400));
+  fs.writeFileSync(transcriptFile(SID_REWRITE), userLine('new') + '\n');
+  const events = await done;
+  const backlogs = events.filter((e) => e.event === 'backlog').map((e) => e.data.map((x) => x.text));
+  assert.deepEqual(backlogs, [['old one', 'old two'], ['new']]);
+  assert.deepEqual(texts(events, 'append'), []);
 });
 
 test('the card cache never served a stale card during these tests', async () => {

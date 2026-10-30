@@ -93,16 +93,20 @@ export function parseLines(text, opts) {
   return events;
 }
 
+// The last `bytes` of a file, starting at a line boundary. One byte before the cut is read too, so a
+// cut that lands exactly on the start of a line keeps that line. `complete` is the file offset just
+// after the last full line (found in bytes: a newline byte is never part of a multi-byte character).
 export async function readTail(file, bytes = TAIL_BYTES) {
   const fh = await fsp.open(file, 'r');
   try {
     const { size } = await fh.stat();
-    const start = Math.max(0, size - bytes);
+    const start = Math.max(0, size - bytes - 1);
     const buf = Buffer.alloc(size - start);
-    await fh.read(buf, 0, buf.length, start);
-    let text = buf.toString('utf8');
-    if (start > 0) text = text.slice(text.indexOf('\n') + 1);
-    return { text, size };
+    const { bytesRead } = await fh.read(buf, 0, buf.length, start);
+    const data = buf.subarray(0, bytesRead);
+    const first = start > 0 ? data.indexOf(0x0a) + 1 : 0;
+    const complete = start + data.lastIndexOf(0x0a) + 1;
+    return { text: data.subarray(first).toString('utf8'), size: start + bytesRead, complete: Math.max(complete, start + first) };
   } finally { await fh.close(); }
 }
 

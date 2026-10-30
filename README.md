@@ -148,7 +148,7 @@ Everything runs on your machine. The server is a single dependency-free Node fil
 | `~/.claude/projects/**/*.jsonl` | Transcripts: messages, tool calls, turn recaps, ticket and PR mentions |
 | `~/Library/Application Support/Claude/claude-code-sessions/**` | Claude desktop app sessions: their app id, archived flag and parent session (read-only, macOS) |
 
-It writes only to `~/.claude/cc-mission-control/` (owner-only; and, for the optional avatar, cached speech in the system temp folder): its token, the archive list, saved stories and open-item checks, usage readings and images you paste into replies. `setup` also writes the `statusLine` entry in `~/.claude/settings.json` (keeping a backup next to it, `settings.json.bak-cc-mission-control`), the skill in `~/.claude/skills/`, and (macOS) its LaunchAgent, which logs to `~/Library/Logs/cc-mission-control.log`. The log is trimmed to its last 1 MB whenever it passes 5 MB.
+It writes only to `~/.claude/cc-mission-control/` (owner-only; the optional avatar keeps its cached speech there too, in `tts/`, pruned to the last 7 days and 500 files): its token, the archive list, saved stories and open-item checks, usage readings and images you paste into replies. `setup` also writes the `statusLine` entry in `~/.claude/settings.json` (keeping a backup next to it, `settings.json.bak-cc-mission-control`), the skill in `~/.claude/skills/`, and (macOS) its LaunchAgent, which logs to `~/Library/Logs/cc-mission-control.log`. The log is trimmed to its last 1 MB whenever it passes 5 MB.
 
 It reaches outside your machine only when you have set that up:
 - `gh api graphql`, to read PR states

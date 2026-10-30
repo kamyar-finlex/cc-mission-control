@@ -28,7 +28,8 @@ test('uninstall removes exactly what setup added, and keeps saved data unless --
   const log = path.join(home, 'Library', 'Logs', 'cc-mission-control.log');
   fs.mkdirSync(path.dirname(log), { recursive: true });
   fs.writeFileSync(log, 'x');
-  fs.mkdirSync(path.join(tmp, 'cc-mission-control-tts'));
+  fs.mkdirSync(path.join(tmp, 'cc-mission-control-tts')); // where installs before 2026-10 kept it
+  fs.mkdirSync(path.join(data, 'tts'));
 
   const out = cli('uninstall');
   assert.match(out, /Removed: .*status line.*skill.*log.*speech cache/);
@@ -36,6 +37,7 @@ test('uninstall removes exactly what setup added, and keeps saved data unless --
   assert.ok(!fs.existsSync(path.dirname(skill)));
   assert.ok(!fs.existsSync(log));
   assert.ok(!fs.existsSync(path.join(tmp, 'cc-mission-control-tts')));
+  assert.ok(!fs.existsSync(path.join(data, 'tts')));
   assert.ok(fs.existsSync(path.join(data, 'token')), 'saved data stays');
   assert.match(out, /Kept: its saved data/);
   assert.doesNotMatch(out, /always-on service/, 'no service was installed, so none is reported');
