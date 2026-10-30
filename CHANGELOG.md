@@ -2,6 +2,40 @@
 
 All notable changes to CC Mission Control. Versions follow [Semantic Versioning](https://semver.org); while the version is 0.x, a minor version can include breaking changes, and they are listed under **Upgrading**.
 
+## 0.3.0 — 2026-10-30
+
+### Upgrading from 0.2.0
+
+1. **Install the new version.** If you installed from GitHub: `npm install -g github:kamyar-finlex/cc-mission-control#v0.3.0`. If your global command links to a clone, run `git pull` in the clone instead.
+2. **Run `cc-mission-control setup` again** to restart the always-on service on the new code. Open tabs reload onto the new page by themselves.
+3. **"new replies" may count fewer sessions.** That's because of quiet runs (below). To count them again, set **Quiet runs** to "count as new".
+
+### Added
+
+- **Notice cards.** Notices that Claude Code or the Claude app put into a session now show as cards in the session drawer, instead of raw `<task-notification>…` tags in a user bubble:
+  - a finished background task, with ✓ / ✗ and its exit code;
+  - a scheduled run, with its instructions folded;
+  - slash commands and shell commands (`$ cmd` with its output);
+  - pasted text, as a folded quote in your bubble;
+  - other app events.
+
+  A message made only of notices gets a row of its own. Tags that a message merely mentions stay as text. ([#12](https://github.com/kamyar-finlex/cc-mission-control/pull/12))
+- **Scheduled runs, grouped.** In each column, the runs of one scheduled task, and of its numbered copies such as `nightly-report-2`, share one group:
+  - a header with the run and slot counts;
+  - the newest run's card;
+  - the earlier runs folded as rows that open the run.
+
+  A working run, or one that asks you something, keeps its own card. ([#13](https://github.com/kamyar-finlex/cc-mission-control/pull/13))
+- **Quiet runs.** A scheduled run that says it had nothing to do ("skipped", "no changes", "nothing new", "all clear") gets no NEW badge or notification, isn't counted as a new reply, and moves to Ended after 30 minutes.
+  - A run that mentions a failure, names something it did, or has a PR, ticket or open question attached is never quiet.
+  - The new **Quiet runs** menu picks the behaviour: to Ended after 30 min, to Ended at once, stay in Waiting, or count as new.
+
+  The wording rules are listed in the README's assumptions table. ([#14](https://github.com/kamyar-finlex/cc-mission-control/pull/14))
+
+### Changed
+
+- **Board titles.** A session started by a notice is titled with a plain line, such as "Scheduled run: nightly-report", instead of raw markup. ([#12](https://github.com/kamyar-finlex/cc-mission-control/pull/12))
+
 ## 0.2.0 — 2026-10-30
 
 ### Upgrading from 0.1.0
