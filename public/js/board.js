@@ -56,7 +56,7 @@ function cardHtml(s) {
       ? `<div class="last summary" title="The Claude app's summary of the last turn">${esc(s.summary)}</div>`
       : `<div class="last">${esc(s.lastAssistant || s.lastUser || s.lastTool || '')}</div>`;
   const where = [s.project, s.worktree ? `⎇ ${s.worktree}` : s.branch ? `⎇ ${s.branch}` : ''].filter(Boolean).map(esc).join(' · ');
-  return `<div class="card ${isUnread(s) ? 'unread' : ''} ${ui.selected === s.sessionId ? 'sel' : ''} ${s.linear?.projects?.length ? 'has-proj' : ''}" data-sid="${esc(s.sessionId)}" tabindex="0">
+  return `<div class="card ${isUnread(s) ? 'unread' : ''} ${ui.selected === s.sessionId ? 'sel' : ''} ${s.linear?.projects?.length ? 'has-proj' : ''}" data-sid="${esc(s.sessionId)}" tabindex="0" role="group" aria-label="${esc(s.title)}, ${PHASE_LABEL[s.phase] || esc(s.phase)}">
     <div class="top"><span class="dot ${cls(s.phase)}" role="img" aria-label="${PHASE_LABEL[s.phase] || esc(s.phase)}"></span><span class="title" title="${esc(s.title + (s.story?.written?.text || s.story?.stitched ? `\n\n${s.story.written?.text || s.story.stitched}` : ''))}">${esc(s.title)}</span>
       <button class="rbtn ${s.phase === 'waiting' ? 'show' : ''}" data-quick="${esc(s.sessionId)}" title="Reply (Markdown)">✎ Reply</button>${whyBtn(s)}${isUnread(s) ? '<span class="tag new">NEW</span>' : ''}<span class="age" data-ts="${esc(s.lastTs || '')}">${ago(s.lastTs)}</span></div>
     <div class="meta">${where}<span class="tag">${esc(kindLabel[s.kind] || s.kind)}</span>${s.model ? `<span class="tag">${esc(shortModel(s.model))}</span>` : ''}${s.ctx ? `<span class="tag" title="Context in use">${kTok(s.ctx)} ctx</span>` : ''}</div>
@@ -94,7 +94,7 @@ function treeHtml(sid, depth = 0) {
   if (!kids?.length || depth > 4) return '';
   return `<div class="tree">${kids.map((k) => {
     const open = cardPrs(k).shown.map(prChip).join('');
-    return `<div class="branch"><div class="node ${ui.selected === k.sessionId ? 'sel' : ''}" data-node="${esc(k.sessionId)}" tabindex="0" role="button" title="${esc(k.summary || k.lastAssistant || k.title)}">
+    return `<div class="branch"><div class="node ${ui.selected === k.sessionId ? 'sel' : ''}" data-node="${esc(k.sessionId)}" tabindex="0" role="group" aria-label="${esc(k.title)}, ${PHASE_LABEL[k.phase] || esc(k.phase)}" title="${esc(k.summary || k.lastAssistant || k.title)}">
       <span class="dot ${cls(k.phase)}" role="img" aria-label="${PHASE_LABEL[k.phase] || esc(k.phase)}"></span><span class="ntitle">${esc(k.title)}</span>${whyBtn(k)}${isUnread(k) ? '<span class="tag new">NEW</span>' : ''}${open}
       <span class="age" data-ts="${esc(k.lastTs || '')}">${ago(k.lastTs)}</span></div>${treeHtml(k.sessionId, depth + 1)}</div>`;
   }).join('')}</div>`;
@@ -249,11 +249,10 @@ document.querySelector('main').addEventListener('click', (e) => {
 $('archBtn').onclick = () => { ui.showArchived = !ui.showArchived; renderBoard(); };
 document.querySelector('main').addEventListener('keydown', (e) => {
   if (e.key !== 'Enter' && e.key !== ' ') return;
-  // Focusable pieces that aren't real buttons (a session in a tree, the "why" line, a project tab)
-  // act on Enter and Space like buttons do.
+  // Focusable pieces that aren't real buttons (the "why" line, a project tab) act on Enter and Space
+  // like buttons do.
   if (e.target.matches?.('[role="button"]:not(button)')) { e.preventDefault(); e.target.click(); return; }
-  // A focused card opens its session. Buttons inside a card (Reply, ?) keep their own Enter and Space:
-  // opening the session first would re-render the card and drop the button's click.
-  const c = e.target.closest('.card');
-  if (c && e.target === c) { e.preventDefault(); openSession(c.dataset.sid); }
+  // A focused card or tree node opens its session. Buttons inside one (Reply, ?) keep their own Enter
+  // and Space: opening the session first would re-render the card and drop the button's click.
+  if (e.target.matches?.('.card, .node')) { e.preventDefault(); e.target.click(); }
 });

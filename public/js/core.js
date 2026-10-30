@@ -27,7 +27,16 @@ export const prevPhase = new Map();
 export const isUnread = (s) => s.phase === 'waiting' && s.lastTs && s.lastTs > (seen[s.sessionId] || 0) && s.lastKind !== 'user';
 
 // Replace markup only when it changed, so live updates don't swallow clicks.
-export function setHtml(el, html) { if (el._html !== html) { el._html = html; el.innerHTML = html; } }
+// The keyboard focus survives: if it was inside, the matching element in the new markup gets it back.
+const FOCUS_KEYS = ['data-sid', 'data-node', 'data-why', 'data-project', 'data-quick', 'data-prs', 'data-tickets'];
+export function setHtml(el, html) {
+  if (el._html === html) return;
+  const f = el.contains(document.activeElement) ? document.activeElement : null;
+  const key = f && FOCUS_KEYS.find((k) => f.hasAttribute(k));
+  const sel = key && `[${key}="${CSS.escape(f.getAttribute(key))}"]${f.classList[0] ? `.${CSS.escape(f.classList[0])}` : ''}`;
+  el._html = html; el.innerHTML = html;
+  if (sel) el.querySelector(sel)?.focus({ preventScroll: true });
+}
 
 export function toast(msg, ms = 2600) {
   const t = $('toast'); t.textContent = msg; t.classList.add('show');
