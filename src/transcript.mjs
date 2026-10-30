@@ -2,6 +2,7 @@ import crypto from 'node:crypto';
 import fsp from 'node:fs/promises';
 import path from 'node:path';
 import { IMAGE_TYPES, PROJ_DIR, RECENT_HOURS, SESS_DIR, TAIL_BYTES } from './config.mjs';
+import { noticeLine } from '../public/js/notices.js'; // shared with the page
 
 // Claude Code transcripts: parsing their lines, finding them on disk, and the live session registry.
 
@@ -116,7 +117,7 @@ export function summarize(events) {
     if (e.kind === 'title') s.title = e.text;
     else if (e.kind === 'branch') s.branch = e.text;
     else if (e.kind === 'cwd') s.cwd = e.text;
-    else if (e.kind === 'user') { s.lastUser = clip(e.text, 300); s.firstUser ??= clip(e.text, 120); }
+    else if (e.kind === 'user') { const t = noticeLine(e.text); s.lastUser = clip(t, 300); s.firstUser ??= clip(t, 120); } // notices as one plain line
     else if (e.kind === 'assistant') s.lastAssistant = clip(e.text, 300);
     if (e.kind === 'tool') s.lastTool = `${e.name.replace(/^mcp__.*__/, '')} · ${clip(e.text, 140)}`;
     if (e.model && e.model !== '<synthetic>') s.model = e.model;
