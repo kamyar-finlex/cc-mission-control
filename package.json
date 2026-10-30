@@ -1,6 +1,6 @@
 {
   "name": "cc-mission-control",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "description": "A live mission-control dashboard for all your local Claude Code sessions. Unofficial, not affiliated with Anthropic.",
   "type": "module",
   "bin": {

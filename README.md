@@ -55,7 +55,7 @@ About 5 minutes.
 | *Send to agent* (type replies into the Claude app for you) | Turn it on in the dashboard. It guides you through the macOS Accessibility permission. |
 | Desktop notifications | Click **Notify** in the dashboard and allow notifications in your browser |
 
-To install a specific release, add its tag: `npm install -g github:kamyar-finlex/cc-mission-control#v0.2.0`. What changed in each release, and what to do when upgrading, is in [CHANGELOG.md](CHANGELOG.md).
+To install a specific release, add its tag: `npm install -g github:kamyar-finlex/cc-mission-control#v0.3.0`. What changed in each release, and what to do when upgrading, is in [CHANGELOG.md](CHANGELOG.md).
 
 Once the package is published to npm, `npm install -g cc-mission-control` and `npx cc-mission-control` work too.
 
