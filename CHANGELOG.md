@@ -6,8 +6,9 @@ All notable changes to CC Mission Control. Versions follow [Semantic Versioning]
 
 ### Upgrading from 0.1.0
 
-- **Run `cc-mission-control setup` again.** It restarts the always-on service on the new code with its new restart rule and log trimming, and updates the `/project-updates` skill (your previous copy is kept as `SKILL.md.bak`).
-- **Sign in each browser once with `cc-mission-control open`.** The page no longer carries its access token. A browser that hasn't signed in sees a short page telling it to run that command. Open tabs from 0.1.0 reload onto the new page by themselves.
+1. **Install the new version.** If you installed from GitHub: `npm install -g github:kamyar-finlex/cc-mission-control#v0.2.0`. If your global command links to a clone, run `git pull` in the clone instead.
+2. **Run `cc-mission-control setup` again.** It restarts the always-on service on the new code with its new restart rule and log trimming, and updates the `/project-updates` skill (your previous copy is kept as `SKILL.md.bak`).
+3. **Sign in each browser once with `cc-mission-control open`.** The page no longer carries its access token. A browser that hasn't signed in sees a short page telling it to run that command; tabs left open from 0.1.0 reload onto that page by themselves.
 - Scripts that call the console directly (the `/project-updates` skill does) send the token from `~/.claude/cc-mission-control/token` in an `X-Console-Token` header.
 
 ### Security
