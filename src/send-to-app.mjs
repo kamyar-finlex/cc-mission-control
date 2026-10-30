@@ -86,7 +86,8 @@ export async function sendToApp(s, text) {
   if (!text || text.length > 20000) return { ok: false, out: 'Write something (up to 20,000 characters).' };
   const status = await automationStatus();
   if (!status.ok) { sendLog(s.appId, `not allowed: ${status.why} ${status.out}`); return { ...status, ok: false, out: `Send to agent isn't allowed yet (${status.why}). Your reply was not sent.` }; }
-  // The whole clipboard (images and files too), with plain text as the fallback.
+  // The whole clipboard (images and files too), with plain text as the fallback. A password manager's
+  // clipboard is left alone: nothing is saved, and nothing is put back.
   const saved = await saveClipboard();
   const before = saved ? null : await pipeTo('pbpaste');
   await pipeTo('pbcopy', text);

@@ -37,8 +37,11 @@ export function ttsWorker(voice = 'bf_emma') {
   // The worker's errors (a missing package, a model it can't load) go to this server's log, capped so a
   // broken install can't fill it.
   let logged = 0;
+  let partial = '';
   child.stderr.on('data', (d) => {
-    for (const line of String(d).split('\n')) {
+    const lines = (partial + d).split('\n');
+    partial = lines.pop(); // a line cut between two chunks waits for its end
+    for (const line of lines) {
       if (!line.trim()) continue;
       if (logged < 200) console.error(`[voice] ${line}`);
       else if (logged === 200) console.error('[voice] (more output not logged)');

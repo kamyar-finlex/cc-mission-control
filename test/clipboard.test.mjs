@@ -38,6 +38,15 @@ test('the whole clipboard comes back: text, an image and a custom type, across t
   assert.deepEqual(fs.readdirSync(process.env.CCMC_DATA_DIR).filter((f) => f.startsWith('clipboard-')), [], 'no saved copy left on disk');
 });
 
+test('a password manager\'s clipboard is neither saved nor put back', { skip: !mac && 'macOS only' }, async () => {
+  put([{ 'public.utf8-plain-text': b64('hunter2'), 'org.nspasteboard.ConcealedType': b64('') }]);
+  const saved = await saveClipboard(NAME);
+  assert.deepEqual(saved, { sensitive: true }, 'the password never leaves the pasteboard');
+  put([{ 'public.utf8-plain-text': b64('the reply') }]);
+  assert.equal(await restoreClipboard(saved, { name: NAME }), false);
+  assert.deepEqual((await saveClipboard(NAME)).items, [{ 'public.utf8-plain-text': b64('the reply') }]);
+});
+
 test('nothing is restored over something copied in the meantime', { skip: !mac && 'macOS only' }, async () => {
   put([{ 'public.utf8-plain-text': b64('before') }]);
   const saved = await saveClipboard(NAME);
