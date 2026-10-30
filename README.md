@@ -75,6 +75,8 @@ Once the package is published to npm, `npm install -g cc-mission-control` and `n
 - A **NEW** badge on sessions that replied since you last looked. The browser tab title shows how many there are.
 - Search across titles, folders, branches, tickets and messages. `/` focuses it.
 - Optional desktop notifications when a session finishes and is waiting for you.
+- **Scheduled runs**, grouped: the runs of each scheduled task (and its numbered copies, like `nightly-report-2`) share one card per column, with the earlier runs folded under it. A working run, or one that asks you something, keeps its own card.
+- **Quiet runs**: a scheduled run that says it had nothing to do ("skipped", "no changes", "nothing new", "all clear") gets no NEW badge or notification and moves to Ended after 30 minutes. Pick another behaviour in the **Quiet runs** menu, or turn it off. A run that mentions a failure, touches a PR or ticket, or asks you something is never quiet.
 
 **On every card**
 - Status, project folder, branch or worktree, model and context size.
@@ -181,6 +183,7 @@ CC Mission Control reads plain text from your sessions, so some of its behaviour
 | **Pull requests live on GitHub**, read with the `gh` CLI. | PR chips and states | `src/linear.mjs`: `PR_URL`; `src/prs.mjs`: `prTick()` |
 | **Releases go through beta (or staging), then a production gate.** The stages are recognised from English wording such as "on beta", "waits at the production gate" or "live in production". | The *Deployments* box | `src/story.mjs`: `deployStage()`, `DEPLOY_LABEL` |
 | **Unfinished work is spotted from English phrases** such as "blocked", "not yet", "still to do" or "waiting on". | The *why it's still alive* line and *Still open* lists | `src/story.mjs`: `OPEN_CUE`, `aliveReason()` |
+| **A scheduled run with nothing to do says so in English**, such as "skipped", "nothing to process", "no changes", "all clear"; and a failure mentions words like "failed", "error", "limit" or "can't". | Which runs are quiet (no NEW badge, moved to Ended) | `public/js/schedules.js`: `NOTHING_TO_DO`, `SOMETHING_WRONG`, `isQuietRun()` |
 | **Deploys are done by the session's agent**, which is asked to report risks and wait for your yes. | The 🚀 *Deploy* request text | `public/js/deploy.js`: `deployPrompt` |
 | **Nudge replies are general English sentences.** | *Carry on with what is open* and *What is left, and who owns it?* | `public/js/why.js`: `GENERIC_REPLIES` |
 | **The Claude desktop app's internals:** its `claude://claude.ai/epitaxy/…` links, its session metadata under `~/Library/Application Support/Claude`, its scheduled tasks and its `get_usage` tool. None of these are a public API. | Opening sessions in the app, the session tree, archived flags, usage limits | `src/config.mjs`: `APP_DIR`, `USAGE_TASK_ID`; `src/app-meta.mjs`: `scanAppMeta()` |

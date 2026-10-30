@@ -1,4 +1,4 @@
-import { $, isArchived, isUnread, setHtml, store, ui } from './core.js';
+import { $, isArchived, isQuiet, isUnread, quietMoved, setHtml, store, ui } from './core.js';
 import { DEPLOY_ICON, deploysPanel } from './deploy.js';
 import { openSession } from './drawer.js';
 import { openQuickReply } from './editor.js';
@@ -57,7 +57,7 @@ function cardHtml(s) {
       ? `<div class="last summary" title="The Claude app's summary of the last turn">${esc(s.summary)}</div>`
       : `<div class="last">${esc(s.lastAssistant || s.lastUser || s.lastTool || '')}</div>`;
   const where = [s.project, s.worktree ? `⎇ ${s.worktree}` : s.branch ? `⎇ ${s.branch}` : ''].filter(Boolean).map(esc).join(' · ');
-  return `<div class="card ${isUnread(s) ? 'unread' : ''} ${ui.selected === s.sessionId ? 'sel' : ''} ${s.linear?.projects?.length ? 'has-proj' : ''}" data-sid="${esc(s.sessionId)}" tabindex="0" role="group" aria-label="${esc(s.title)}, ${PHASE_LABEL[s.phase] || esc(s.phase)}">
+  return `<div class="card ${isUnread(s) ? 'unread' : ''} ${isQuiet(s) ? 'quiet' : ''} ${ui.selected === s.sessionId ? 'sel' : ''} ${s.linear?.projects?.length ? 'has-proj' : ''}" data-sid="${esc(s.sessionId)}" tabindex="0" role="group" aria-label="${esc(s.title)}, ${PHASE_LABEL[s.phase] || esc(s.phase)}">
     <div class="top"><span class="dot ${cls(s.phase)}" role="img" aria-label="${PHASE_LABEL[s.phase] || esc(s.phase)}"></span><span class="title" title="${esc(s.title + (s.story?.written?.text || s.story?.stitched ? `\n\n${s.story.written?.text || s.story.stitched}` : ''))}">${esc(s.title)}</span>
       <button class="rbtn ${s.phase === 'waiting' ? 'show' : ''}" data-quick="${esc(s.sessionId)}" title="Reply (Markdown)">✎ Reply</button>${whyBtn(s)}${isUnread(s) ? '<span class="tag new">NEW</span>' : ''}<span class="age" data-ts="${esc(s.lastTs || '')}">${ago(s.lastTs)}</span></div>
     <div class="meta">${where}<span class="tag">${esc(kindLabel[s.kind] || s.kind)}</span>${s.model ? `<span class="tag">${esc(shortModel(s.model))}</span>` : ''}${s.ctx ? `<span class="tag" title="Context in use">${kTok(s.ctx)} ctx</span>` : ''}</div>
@@ -227,7 +227,8 @@ export function renderBoard() {
     childrenOf.get(s.parentId).push(s);
   }
   const cols = { working: [], waiting: [], ended: [] };
-  for (const s of v) if (!(s.parentId && shown.has(s.parentId))) (cols[s.phase] || cols.ended).push(s);
+  // A quiet run moved to Ended is drawn like the ended sessions around it (grey, no Reply or "?").
+  for (const s of v) if (!(s.parentId && shown.has(s.parentId))) { if (quietMoved(s)) cols.ended.push({ ...s, phase: 'ended' }); else (cols[s.phase] || cols.ended).push(s); }
   cols.waiting.sort((a, b) => (isUnread(b) - isUnread(a)) || (b.lastTs || 0) - (a.lastTs || 0));
   const label = RANGES.find(([k]) => k === ui.range)?.[1].toLowerCase() || 'this range';
   const empty = { working: 'Nothing running right now.', waiting: `No session waiting for you from ${label}.`, ended: `No sessions ended ${ui.range === 'all' ? 'in the last month' : label}.` };
@@ -286,3 +287,8 @@ document.querySelector('main').addEventListener('keydown', (e) => {
   // and Space: opening the session first would re-render the card and drop the button's click.
   if (e.target.matches?.('.card, .node')) { e.preventDefault(); e.target.click(); }
 });
+
+// The "Quiet runs" setting, and a re-render every minute so a quiet run moves to Ended on time.
+$('quietSel').value = ui.quietRuns;
+$('quietSel').addEventListener('change', (e) => { ui.quietRuns = e.target.value; store.set('quietRuns', ui.quietRuns); renderBoard(); });
+setInterval(() => { if (ui.quietRuns === 'move') renderBoard(); }, 60e3);

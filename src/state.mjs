@@ -100,7 +100,7 @@ function enrich(s) {
       if (m.needsAction) s.needsAction = m.needsAction;
       if (m.parentAppId) s.parentId = appIdToCli.get(m.parentAppId);
       if (m.archived) s.appArchived = true;
-      // Runs of a scheduled task. Numbered copies of one task (autopilot-agent, -2, -3) are slots of
+      // Runs of a scheduled task. Numbered copies of one task (nightly-report, -2, -3) are slots of
       // one schedule, so the board groups them under one family. (Two unrelated tasks that differ
       // only by a trailing number, like standup-1 and standup-7, are grouped too: the price of that rule.)
       if (m.scheduledTaskId) s.schedule = { id: m.scheduledTaskId, family: m.scheduledTaskId.replace(/-\d+$/, '') };

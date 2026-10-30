@@ -1,5 +1,5 @@
 // Runs of one schedule, grouped. A scheduled task can start dozens of sessions a day (and numbered
-// copies of a task, like autopilot-agent-2 and -3, are slots of one schedule); one card per run
+// copies of a task, like nightly-report-2 and -3, are slots of one schedule); one card per run
 // would bury everything else. No DOM: the tests import this.
 
 // A column's sessions, in order, as cards and groups. A group takes the place of its newest run (the
@@ -23,10 +23,28 @@ export function groupRuns(list, { isUnread = () => false, standsOut = () => fals
     placed.add(f);
     out.push({
       type: 'group', family: f, lead: runs[0], rest: runs.slice(1),
-      name: f.replace(/[-_]+/g, ' ').replace(/^./, (c) => c.toUpperCase()), // autopilot-agent -> "Autopilot agent"
+      name: f.replace(/[-_]+/g, ' ').replace(/^./, (c) => c.toUpperCase()), // nightly-report -> "Nightly report"
       slots: new Set(runs.map((r) => r.schedule.id)).size,
       unread: runs.filter(isUnread).length,
     });
   }
   return out;
+}
+
+// "Quiet" runs: a run of any scheduled task that says it had nothing to do. Such runs are routine for
+// schedules that poll (a nightly report with no changes, an inbox check with nothing new), and the
+// board can keep them from counting as new. Spotted from English wording, in what the run last said;
+// anything that mentions a failure stays loud, and so does a run with a PR, a ticket, a deploy, an
+// open question or anything else still open, and so does one that names something it did.
+export const NOTHING_TO_DO = /\b(skipp(ed|ing)|nothing (new|to (do|process|report|review|send|act on))|no (changes|work|new \w+|pending \w+|queued \w+|open \w+|issues)\b|all clear|(queue|inbox) (is )?empty)|SKIP[-_]EMPTY/i;
+export const SOMETHING_WRONG = /\b(fail(ed|s|ure)?|error|exception|can't|cannot|couldn't|unable|blocked|denied|timed? ?out|not (connected|allowed|found|configured)|hit (your|the|a) [\w ]*limit|limit (reached|exceeded))\b/i;
+// A run that names something it did is never quiet, even if it also says "no new …".
+export const DID_SOMETHING = /\b(pushed|merged|deployed|tagged|published|bumped|committed|created|opened|posted|sent|fixed|wrote|added|removed)\b/i; // not "released": "slot released" is bookkeeping
+
+export function isQuietRun(s) {
+  if (!s.schedule || s.phase === 'working') return false;
+  if (s.prs?.length || s.linear?.tickets?.length || s.deploys?.length || s.story?.waitingOn?.ask) return false;
+  if (s.alive && s.alive.tone !== 'done') return false;
+  const said = `${s.summary || ''}\n${s.lastAssistant || ''}`;
+  return NOTHING_TO_DO.test(said) && !SOMETHING_WRONG.test(said) && !DID_SOMETHING.test(said);
 }
