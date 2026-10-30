@@ -450,3 +450,9 @@ kbd { font-family: var(--mono); font-size: 11px; border: 1px solid var(--line); 
 .sruns .node .nlast { flex: 1; min-width: 0; color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .sruns .node .age { flex: none; color: var(--muted); }
 .smore { padding: 4px 8px; font-size: 11.5px; color: var(--muted); }
+
+/* A scheduled run that said it had nothing to do. */
+.card.quiet { opacity: .72; }
+.card.quiet:hover, .card.quiet:focus-visible, .card.quiet.sel { opacity: 1; }
+.qsel { display: inline-flex; align-items: center; gap: 6px; font-size: 12.5px; color: var(--muted); }
+.qsel select { font: inherit; color: var(--text); background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 3px 6px; }

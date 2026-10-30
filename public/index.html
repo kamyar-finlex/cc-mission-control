@@ -18,6 +18,13 @@
   <button id="puBtn" title="Write today's project updates (you confirm before anything is posted)">📝 Project updates</button>
   <button id="sendBtn" title="Let the console paste and press Enter in the Claude app for you">Send to agent: off</button>
   <button id="notifyBtn" title="Desktop notification when a session needs you">Notify: off</button>
+  <label class="qsel" title="Runs of a scheduled task that say they had nothing to do (skipped, no changes, all clear). Runs that mention a failure, or touched a PR or ticket, are never quiet.">Quiet runs
+    <select id="quietSel">
+      <option value="move">not new, to Ended after 30 min</option>
+      <option value="now">not new, to Ended at once</option>
+      <option value="stay">not new, stay in Waiting</option>
+      <option value="off">count as new</option>
+    </select></label>
   <button class="primary" id="newBtn">+ New agent <kbd style="color:#fff;border-color:#ffffff66">n</kbd></button>
 </header>
 <main>

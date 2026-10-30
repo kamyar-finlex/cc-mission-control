@@ -1,3 +1,5 @@
+import { isQuietRun } from './schedules.js';
+
 // What every module shares: the DOM helper, saved settings, page state, toasts and actions.
 // Signed in by an HttpOnly cookie; this header tells the server a request came from this page.
 export const ACT_HEADERS = { 'X-Console-Request': '1' };
@@ -18,13 +20,20 @@ export const ui = {
   folds: store.get('folds', { linear: true, prs: true, deploys: true }),
   autoSend: store.get('autoSend', false),
   usage: {},
+  // Scheduled runs that say they had nothing to do: 'move' (not new; to Ended after 30 min), 'now'
+  // (not new; to Ended at once), 'stay' (not new; stays in Waiting) or 'off' (like any session).
+  quietRuns: store.get('quietRuns', 'move'),
 };
 
 export const isArchived = (s) => !!(s.archived || s.appArchived);
 export let seen = store.get('seen', {});
 
 export const prevPhase = new Map();
-export const isUnread = (s) => s.phase === 'waiting' && s.lastTs && s.lastTs > (seen[s.sessionId] || 0) && s.lastKind !== 'user';
+export const QUIET_MOVE_MS = 30 * 60e3;
+export const isQuiet = (s) => ui.quietRuns !== 'off' && isQuietRun(s);
+// Where a quiet run is shown: in Ended once the setting says so, otherwise where its phase puts it.
+export const quietMoved = (s) => isQuiet(s) && (ui.quietRuns === 'now' || (ui.quietRuns === 'move' && Date.now() - (s.lastTs || 0) > QUIET_MOVE_MS));
+export const isUnread = (s) => s.phase === 'waiting' && s.lastTs && s.lastTs > (seen[s.sessionId] || 0) && s.lastKind !== 'user' && !isQuiet(s);
 
 // Replace markup only when it changed, so live updates don't swallow clicks.
 // The keyboard focus survives: if it was inside, the matching element in the new markup gets it back.

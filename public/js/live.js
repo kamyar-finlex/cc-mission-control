@@ -1,5 +1,5 @@
 import { renderBoard } from './board.js';
-import { $, prevPhase, toast, ui } from './core.js';
+import { $, isQuiet, prevPhase, toast, ui } from './core.js';
 import { markSeen, openSession, renderHead } from './drawer.js';
 import { renderStory } from './story.js';
 import { ago, bySessionOrder, esc } from './util.js';
@@ -11,7 +11,7 @@ function onState(list) {
   for (const s of list) {
     const before = prevPhase.get(s.sessionId);
     const watching = ui.selected === s.sessionId && !document.hidden;
-    if (before === 'working' && s.phase === 'waiting' && ui.notify && !watching) {
+    if (before === 'working' && s.phase === 'waiting' && ui.notify && !watching && !isQuiet(s)) {
       try {
         const n = new Notification(`${s.title}`, { body: `Waiting for you · ${s.project}\n${(s.lastAssistant || '').slice(0, 140)}`, tag: s.sessionId });
         n.onclick = () => { window.focus(); openSession(s.sessionId); };

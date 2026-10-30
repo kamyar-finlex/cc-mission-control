@@ -33,14 +33,14 @@ test('a failed task is marked as failed', () => {
 });
 
 test('a scheduled run shows its name and folds its long instructions, even when cut off', () => {
-  const run = '<scheduled-task name="autopilot-agent-3" file="/x/SKILL.md">\nThis is an automated run of a scheduled task. The user is not present…';
+  const run = '<scheduled-task name="nightly-report-3" file="/x/SKILL.md">\nThis is an automated run of a scheduled task. The user is not present…';
   const segs = splitNotices(run);
   assert.equal(segs[0].closed, false);
   const out = html(run);
-  assert.match(out, /Scheduled run<\/span><span class="ntitle">autopilot-agent-3<\/span>/);
+  assert.match(out, /Scheduled run<\/span><span class="ntitle">nightly-report-3<\/span>/);
   assert.match(out, /<details class="nfold"><summary>Its instructions<\/summary>/);
   assert.match(out, /shortened in the transcript/);
-  assert.equal(noticeLine(run), 'Scheduled run: autopilot-agent-3');
+  assert.equal(noticeLine(run), 'Scheduled run: nightly-report-3');
 });
 
 test('a slash command and a shell command each become one card', () => {
