@@ -227,7 +227,8 @@ export function renderBoard() {
     childrenOf.get(s.parentId).push(s);
   }
   const cols = { working: [], waiting: [], ended: [] };
-  for (const s of v) if (!(s.parentId && shown.has(s.parentId))) (cols[quietMoved(s) ? 'ended' : s.phase] || cols.ended).push(s);
+  // A quiet run moved to Ended is drawn like the ended sessions around it (grey, no Reply or "?").
+  for (const s of v) if (!(s.parentId && shown.has(s.parentId))) { if (quietMoved(s)) cols.ended.push({ ...s, phase: 'ended' }); else (cols[s.phase] || cols.ended).push(s); }
   cols.waiting.sort((a, b) => (isUnread(b) - isUnread(a)) || (b.lastTs || 0) - (a.lastTs || 0));
   const label = RANGES.find(([k]) => k === ui.range)?.[1].toLowerCase() || 'this range';
   const empty = { working: 'Nothing running right now.', waiting: `No session waiting for you from ${label}.`, ended: `No sessions ended ${ui.range === 'all' ? 'in the last month' : label}.` };

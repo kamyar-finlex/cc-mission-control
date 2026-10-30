@@ -35,14 +35,16 @@ export function groupRuns(list, { isUnread = () => false, standsOut = () => fals
 // schedules that poll (a nightly report with no changes, an inbox check with nothing new), and the
 // board can keep them from counting as new. Spotted from English wording, in what the run last said;
 // anything that mentions a failure stays loud, and so does a run with a PR, a ticket, a deploy, an
-// open question or anything else still open.
-export const NOTHING_TO_DO = /\b(skipp(ed|ing)|nothing (new|to (do|process|report|review|send|act on))|no (changes|work|new \w+|pending \w+|queued \w+|open \w+|issues)\b|all clear|up to date|(queue|inbox) (is )?empty)|SKIP[-_]EMPTY/i;
-export const SOMETHING_WRONG = /\b(fail(ed|s|ure)?|error|exception|limit|can't|cannot|couldn't|unable|blocked|denied|timed? ?out|not (connected|allowed|found|configured))\b/i;
+// open question or anything else still open, and so does one that names something it did.
+export const NOTHING_TO_DO = /\b(skipp(ed|ing)|nothing (new|to (do|process|report|review|send|act on))|no (changes|work|new \w+|pending \w+|queued \w+|open \w+|issues)\b|all clear|(queue|inbox) (is )?empty)|SKIP[-_]EMPTY/i;
+export const SOMETHING_WRONG = /\b(fail(ed|s|ure)?|error|exception|can't|cannot|couldn't|unable|blocked|denied|timed? ?out|not (connected|allowed|found|configured)|hit (your|the|a) [\w ]*limit|limit (reached|exceeded))\b/i;
+// A run that names something it did is never quiet, even if it also says "no new …".
+export const DID_SOMETHING = /\b(pushed|merged|deployed|tagged|published|bumped|committed|created|opened|posted|sent|fixed|wrote|added|removed)\b/i; // not "released": "slot released" is bookkeeping
 
 export function isQuietRun(s) {
   if (!s.schedule || s.phase === 'working') return false;
   if (s.prs?.length || s.linear?.tickets?.length || s.deploys?.length || s.story?.waitingOn?.ask) return false;
   if (s.alive && s.alive.tone !== 'done') return false;
   const said = `${s.summary || ''}\n${s.lastAssistant || ''}`;
-  return NOTHING_TO_DO.test(said) && !SOMETHING_WRONG.test(said);
+  return NOTHING_TO_DO.test(said) && !SOMETHING_WRONG.test(said) && !DID_SOMETHING.test(said);
 }

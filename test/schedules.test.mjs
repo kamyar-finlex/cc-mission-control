@@ -52,14 +52,15 @@ const said = (summary, extra = {}) => ({ sessionId: 'x', phase: 'waiting', title
 
 test('a scheduled run that says it had nothing to do is quiet, whatever the schedule', () => {
   for (const t of ['nightly-report run skipped; nothing to process', 'Scheduled run ended with SKIP-EMPTY', 'No changes since yesterday.',
-    'Inbox check: nothing new', 'All clear: every service healthy', 'Queue is empty, nothing to do', 'Everything is up to date']) {
+    'Inbox check: nothing new', 'All clear: every service healthy', 'Queue is empty, nothing to do; slot released', 'Skipped: nothing new, well under the API rate limit']) {
     assert.equal(isQuietRun(said(t)), true, t);
   }
 });
 
 test('failures, real work, questions and unscheduled sessions are never quiet', () => {
   for (const t of ['keep-alive failed: browser not connected', "You've hit your monthly spend limit", "Can't run: the project has no config",
-    'Skipped because of an error reading the queue', 'Deployed the fix to staging', '']) {
+    'Skipped because of an error reading the queue', 'Deployed the fix to staging', '',
+    'Bumped 3 packages and pushed to main; nothing new to report', 'Merged the release branch; no open issues', 'Limit reached, skipping this run']) {
     assert.equal(isQuietRun(said(t)), false, t || '(nothing said)');
   }
   assert.equal(isQuietRun(said('skipped', { prs: [{ number: 1 }] })), false, 'touched a PR');
